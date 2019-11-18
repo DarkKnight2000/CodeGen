@@ -17,8 +17,8 @@ public class Codegen{
 	private HashMap<String, ArrayList<AST.attr>> initOrder;
 	private HashMap<String, HashMap<String , Integer>> attrNumMap;
 	private int global = 0; 
-	private String buffer = "";
-	AST.static_dispatch divErr, voidErr;
+	private String buffer = "", voidErr;
+	AST.static_dispatch divErr;
 	public Codegen(AST.program program, PrintWriter out){
 		//Write Code generator code here
 		out.println("; I am a comment in LLVM-IR. Feel free to remove me.");
@@ -37,14 +37,11 @@ public class Codegen{
 		ClsToWrite = new ArrayList<String>();
 		baseClasses = new ArrayList<String>(Arrays.asList("Object", "IO", "Int", "String", "Bool"));
 		preDefMthds = new ArrayList<String>(Arrays.asList("abort", "type_name", "copy", "out_string", "out_int", "in_int", "in_string", "concat", "substr", "length"));
-		divErr = new AST.static_dispatch(new AST.new_("IO", 0), "IO", "out_string", new ArrayList<expression>(Arrays.asList((AST.expression) new AST.string_const("Error: Division by 0.\n", 0))), 0);
+		divErr = new AST.static_dispatch(new AST.new_("IO", 0), "IO", "out_string", new ArrayList<expression>(Arrays.asList((AST.expression) new AST.string_const("Error: Division by 0", 0))), 0);
 		divErr.type = "IO";
 		divErr.caller.type = "IO";
 		divErr.actuals.get(0).type = "String";
-		voidErr = new AST.static_dispatch(new AST.new_("IO", 0), "IO", "out_string", new ArrayList<expression>(Arrays.asList((AST.expression) new AST.string_const("Error: Static Dispatch on void.\n", 0))), 0);
-		voidErr.type = "IO";
-		voidErr.caller.type = "IO";
-		voidErr.actuals.get(0).type = "String";
+		voidErr = "Error: Static Dispatch on void";
 		processProgram(program);
 
 		out.println("source_filename = \""+program.classes.get(0).filename+"\"\n"+"target datalayout = \"e-m:e-i64:64-f80:128-n8:16:32:64-S128\"\ntarget triple = \"x86_64-pc-linux-gnu\"");
@@ -249,6 +246,10 @@ public class Codegen{
 			}
 			out.println("call void @INIT_" + cls.name + "(" + getTypePointer(cls.name) + " " + thisVar + ")");
 		}
+		/*writeStore(out, thisVar, writeAlloc(out, varName, getTypePointer(cls.name)), getTypePointer(cls.name), true);
+		writeLoad(out, varName, "%"+(varName.value-1), getTypePointer(cls.name), true);
+		aMap.put("self", varName.value-1);
+		tMap.put("self", cls.name);*/
 		for(int j=0;j<cls.alist.size();++j) {
 			AST.attr attr = cls.alist.get(anames.get(j));
 			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (cls.name) + ", %class." + (cls.name) + "* " + thisVar + ", i32 0, i32 " + j + "; " + attr.name);
@@ -504,9 +505,12 @@ public class Codegen{
 			if(!(finalExpr.e2 instanceof AST.int_const) || (finalExpr.e2 instanceof AST.int_const && evalExpr(cls, finalExpr.e2, out, varNameStart, aMap, tMap, false).equals("0"))){
 				out.println("br label %" + (varNameStart.value+6));
 				varNameStart.value++;
+				AST.string_const detErr = (AST.string_const) divErr.actuals.get(0);
+				detErr.value += " on line " + finalExpr.lineNo + "\n";
 				evalExpr(cls, divErr, out, varNameStart, aMap, tMap, needPointer);
 				out.println("call void @exit(i32 1)\n");
 				out.println("br label %" + (varNameStart.value++));
+				detErr.value = "Error: Division by 0";
 			}
 			return needPointer ? divRes : writeLoad(out, varNameStart, divRes, "Int");
 		}
@@ -592,7 +596,23 @@ public class Codegen{
 			System.out.println("Stat dsi on " + callingCls.name + " on " + callingMeth.name);
 			String callVarName = evalExpr(cls, finalExpr.caller, out, varNameStart, aMap, tMap,true);
 			String retType = callingMeth.typeid.equals("SELF_TYPE") ? finalExpr.typeid : callingMeth.typeid;
-			mthdsToWrite.put(classMap.get("IO").mlist.get("out_string"), classMap.get("IO"));
+			if(!(finalExpr.caller instanceof AST.new_)){
+				mthdsToWrite.put(classMap.get("IO").mlist.get("out_string"), classMap.get("IO"));
+				out.println("%" + (varNameStart.value++) + " = icmp eq " + getType(finalExpr.caller.type) + "* " + callVarName + ", null");
+				out.println("br i1 %" + (varNameStart.value-1) + ", label %" + (varNameStart.value++) + ", label %" + (varNameStart.value+4));
+				out.println("%" + (varNameStart.value++) + " = alloca %class.IO");
+				String ioalloc = "%" + (varNameStart.value-1);
+				out.println("call void @INIT_IO(%class.IO* %" + (varNameStart.value-1) + ")");
+				String detailErr = voidErr + " on line " + finalExpr.caller.lineNo + "\n";
+				buffer += "@str."+(global++)+" = private unnamed_addr constant ["+(detailErr.length()+1)+" x i8] c\"" + writeStr(detailErr) + "\\00\", align 1\n";
+				typeMap.put("@str." + (global-1), "[" + (detailErr.length()+1) + " x i8]*");
+				out.println("%" + (varNameStart.value++) + " = bitcast " + typeMap.get("@str." + (global-1)) + " " + "@str." + (global-1) + " to i8*");
+				out.println("%" + (varNameStart.value++) + " = alloca i8*, align 8");
+				out.println("store i8* %" + (varNameStart.value-2) + ", i8** %" + (varNameStart.value-1));
+				out.println("%" + (varNameStart.value++) + " = call %class.IO @out_string_IO(%class.IO* " + ioalloc + ", i8** %" + (varNameStart.value-2) + ")");
+				out.println("call void @exit(i32 1)");
+				out.println("br label %" + (varNameStart.value++));
+			}
 			if(!finalExpr.typeid.equals(finalExpr.caller.type)){
 				addCast(finalExpr.typeid, finalExpr.caller.type);
 				String callCastVal = writeAlloc(out, varNameStart, getType(finalExpr.typeid));
