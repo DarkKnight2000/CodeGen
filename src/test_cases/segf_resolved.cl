@@ -15,6 +15,7 @@ class Main {
 
 class A{
 	a:Int;
+	b:A;
 	f():Int{{
 		new A@A.abort();
 		a;
