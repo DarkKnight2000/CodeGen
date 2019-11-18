@@ -87,7 +87,7 @@ public class Codegen{
 		out.println("declare void @exit(i32)");
 		out.println("declare i32 @scanf(i8*, ...) #1");
 		out.println("declare i32 @printf(i8*, ...) #1");
-		out.println("declare i8* @malloc(i64) #1");
+		out.println("declare i8* @malloc(i32) #1");
 		out.println("declare i64 @strlen(i8*) #1");
 		out.println("declare i8* @strcpy(i8*, i8*) #1");
 		out.println("declare i8* @strcat(i8*, i8*) #1");
@@ -142,24 +142,27 @@ public class Codegen{
 				out.println("%3 = trunc i64 %2 to i32\n");
 				out.println("ret i32" + " %3\n}");
 			}
-			else if(meth.name.equals("concat")){// Not working
+			else if(meth.name.equals("concat")){// working
 				out.println("\ndefine i8* @concat_" + cls.name + "( i8**, i8** ){\nentry:");
-				out.println("%4 = call i8* @strcat( i8* " + writeLoad(out, "%2", "%0", "String") + ", i8* " + writeLoad(out, "%3", "%1", "String") + " )");
-				//out.println("%5 = call i8* @malloc( i64 128 )");
-				out.println("%5 = bitcast i8* %4 to i8*");
-				out.println("ret i8* %5\n}");
+				writeLoad(out, "%2", "%0", "String");
+				writeLoad(out, "%3", "%1", "String");
+				out.println("%4 = call i8* @malloc( i32 1024 )");
+				out.println("%5 = call i8* @strcpy( i8* %4, i8* %2 )");
+				out.println("%6 = call i8* @strcat( i8* %5, i8* %3 )");
+				out.println("ret i8* %6\n}");
 			}
 			else if(meth.name.equals("substr")){// Not working
+				out.println("@str."+(global++)+" = private unnamed_addr constant [1 x i8] zeroinitializer, align 1");
 				out.println("\ndefine i8* @substr_" + cls.name + "( i8**, i32* %sp, i32* %lp){\nentry:");
 				writeLoad(out, "%start", "%sp", "Int");
 				writeLoad(out, "%len", "%lp", "Int");
-				out.println("%sps = getelementptr inbounds i8*, i8** %0, i32 0, i32 0");
-				out.println("%1 = getelementptr inbounds i8, i8* %sps, i32 0, i32 %start");
-				out.println("%2 = call i8* @malloc( i64 1024 )");
-				out.println("%3 = call i8* @strncpy( i8* %2, i8* %0, i32 %len )");
-				out.println("%4 = getelementptr inbounds [1024 x i8], [1024 x i8]* %retval, i32 0, i32 %len");
-				out.println("store i8 0, i8* %4");
-				out.println("ret i32" + " %3\n}");
+				out.println("%sps = load i8*, i8** %0");
+				out.println("%1 = getelementptr inbounds i8, i8* %sps, i32 %start");
+				out.println("%2 = call i8* @malloc( i32 1024 )");
+				out.println("%3 = call i8* @strncpy( i8* %2, i8* %1, i32 %len )");
+				out.println("%4 = getelementptr inbounds [1 x i8], [1 x i8]* @str." + (global-1) + ", i32 0, i32 0");
+				out.println("%5 = call i8* @strcat( i8* %3, i8* %4 )");
+				out.println("ret i8* %5\n}");
 			}
 			else if(meth.name.equals("out_string")){// Working
 				out.println("\ndefine " + getType(cls.name) + " @out_string_" + cls.name + "( " + getType(cls.name) + "* %this, i8** %x){\nentry:");
@@ -184,7 +187,7 @@ public class Codegen{
 			}
 			else if(meth.name.equals("in_int")){// Working
 				out.println("\ndefine i32 @in_int_" + cls.name + "( " + getType(cls.name) + "* %this ) #0{\nentry:");
-				out.println("%0 = call i8* @malloc( i64 4 )");
+				out.println("%0 = call i8* @malloc( i32 4 )");
 				out.println("%1 = bitcast i8* %0 to i32*");
 				out.println("%2 = call i32 (i8*, ...) @scanf( i8* bitcast ( [3 x i8]* @strfori to i8* ), i32* %1 )");
 				out.println("ret i32 " + writeLoad(out, "%3", "%1", "Int") + "\n}");
@@ -195,7 +198,7 @@ public class Codegen{
 			}
 			else if(meth.name.equals("in_string")){// Working
 				out.println("\ndefine i8* @in_string_" + cls.name + "( " + getType(cls.name) + "* %this ) #0{\nentry:");
-				out.println("%0 = call i8* @malloc( i64 1024 )");
+				out.println("%0 = call i8* @malloc( i32 1024 )");
 				out.println("%1 = call i32 (i8*, ...) @scanf( i8* bitcast ( [3 x i8]* @strfors to i8* ), i8* %0 )");
 				out.println("ret i8* %0\n}");
 				if(!typeMap.containsKey("@strfors")){
@@ -227,6 +230,7 @@ public class Codegen{
 		IntPointer varName = new IntPointer(i);
 		String val = "";
 		ArrayList<String> anames = new ArrayList<String>(cls.alist.keySet());
+		HashMap<String,String> tMap = new HashMap<String,String>();
 		String thisVar = "%this";
 		if(mthd.name.equals("main") && cls.name.equals("Main")){
 			String thisVarPoi = writeAlloc(out, varName, getTypePointer(cls.name));
@@ -243,20 +247,26 @@ public class Codegen{
 					writeStore(out, tempatalloc, "%" + (varName.value-1), getTypePointer(tempat.typeid), true);
 				}
 			}
+			out.println("call void @INIT_" + cls.name + "(" + getTypePointer(cls.name) + " " + thisVar + ")");
 		}
-		out.println("call void @INIT_" + cls.name + "(" + getTypePointer(cls.name) + " " + thisVar + ")");
 		for(int j=0;j<cls.alist.size();++j) {
 			AST.attr attr = cls.alist.get(anames.get(j));
 			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (cls.name) + ", %class." + (cls.name) + "* " + thisVar + ", i32 0, i32 " + j + "; " + attr.name);
 			if(!typeMap.containsKey(attr.typeid)) writeLoad(out, varName, "%" + (varName.value-1), getTypePointer(attr.typeid), true);
 			aMap.put(attr.name, varName.value-1);
+			tMap.put(attr.name, attr.typeid);
+		}
+		int in = 0;
+		for(AST.formal f: mthd.formals){
+			tMap.put(f.name, f.typeid);
+			aMap.put(f.name, in++);
 		}
 		if(mthd.body.type.equals(mthd.typeid)){
-			val = evalExpr(cls, mthd.body, out, varName, aMap, true);
+			val = evalExpr(cls, mthd.body, out, varName, aMap, tMap, true);
 			out.println("ret " + getType(mthd.typeid) + "* " + val);
 		}
 		else{
-			val = evalExpr(cls, mthd.body, out, varName, aMap, true);
+			val = evalExpr(cls, mthd.body, out, varName, aMap, tMap, true);
 			addCast(mthd.typeid, mthd.body.type);
 			String retVar = writeAlloc(out, varName, getType(mthd.typeid));
 			out.println("call void @CAST_" + mthd.typeid + "_" + mthd.body.type + "( " + getType(mthd.typeid) + "* " + retVar + ", " + getTypePointer(mthd.body.type) + " " + val + " )");
@@ -278,14 +288,16 @@ public class Codegen{
 		ArrayList<String> achldnames = new ArrayList<String>();
 		achldnames.addAll(clsPar.alist.keySet());
 		if(!achldnames.equals(aparnames)) System.out.println("Error casting");
+		int chldOffset = 0;
 		for(int i=0; i<aparnames.size(); ++i){
 			AST.attr presA = clsPar.alist.get(aparnames.get(i));
 			String atype = presA.typeid;
+			if(!typeMap.containsKey(atype)) chldOffset++;
 			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (clsPar.name) + ", %class." + (clsPar.name) + "* %par, i32 0, i32 " + i);
 			//System.out.println("par-"+clsPar.alist.get(anames.get(i)));
-			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (clsChild.name) + ", %class." + (clsChild.name) + "* %chld, i32 0, i32 " + attrNumMap.get(clsChild.name).get(presA.name));
+			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (clsChild.name) + ", %class." + (clsChild.name) + "* %chld, i32 0, i32 " + (attrNumMap.get(clsChild.name).get(presA.name) - chldOffset));
 			//System.out.println("child-"+clsChild.alist.keySet().get(anames.get(i)));
-			writeStore(out, writeLoad(out, varName, "%" + (varName.value-1), atype), "%" + (varName.value-3), atype);
+			writeStore(out, writeLoad(out, varName, "%" + (varName.value-1), (typeMap.containsKey(atype)) ? getType(atype) : getTypePointer(atype), true), "%" + (varName.value-3), (typeMap.containsKey(atype)) ? getType(atype) : getTypePointer(atype), true);
 			//out.println("store " + atype + " %" + (varName.value-1) + ", " + atype + "* %" + (varName.value-3));
 			if(!ClsToWrite.contains(atype)) ClsToWrite.add(atype);
 		}
@@ -308,11 +320,13 @@ public class Codegen{
 		IntPointer varName = new IntPointer();
 		ArrayList<String> anames = new ArrayList<String>(cls.alist.keySet());
 		HashMap<String,Integer> amap = new HashMap<String,Integer>();
+		HashMap<String,String> tmap = new HashMap<String,String>();
 		for(int i=0;i<cls.alist.size();++i) {
 			AST.attr attr = cls.alist.get(anames.get(i));
 			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (cls.name) + ", %class." + (cls.name) + "* %this, i32 0, i32 " + i + "; " + attr.name);
 			if(!typeMap.containsKey(attr.typeid)) writeLoad(out, varName, "%" + (varName.value-1), getTypePointer(attr.typeid), true);
 			amap.put(attr.name, varName.value-1);
+			tmap.put(attr.name, attr.typeid);
 		}
 		attrNumMap.put(cls.name, amap);
 		for(int i=0;i<cls.alist.size();++i) {
@@ -331,31 +345,34 @@ public class Codegen{
 					buffer += "@str."+(global++)+" = private unnamed_addr constant [1 x i8] zeroinitializer, align 1";
 					out.println("store i8* getelementptr inbounds ([1 x i8], [1 x i8]* @str." + (global-1) + ", i32 0, i32 0), i8** %"+ (aName) +", align 8");
 				}
+				else{
+					writeStore(out, "null", "%"+(aName-1), getTypePointer(attr.typeid), true);
+				}
 			}
 			else{
 				String val = "";
 				if(attr.typeid.equals("Int")){
-					val = evalExpr(cls, attr.value, out, varName, amap, false);
+					val = evalExpr(cls, attr.value, out, varName, amap, tmap, false);
 					writeStore(out, val, "%"+aName, "Int");
 					//out.println("store i32 " + val + ", i32* %"+(aName)+", align 4");
 				}
 				else if(attr.typeid.equals("Bool")){
-					val = evalExpr(cls, attr.value, out, varName, amap, false);
+					val = evalExpr(cls, attr.value, out, varName, amap, tmap, false);
 					writeStore(out, val, "%"+aName, "Bool");
 					//out.println("store i8 "+ val +", i8* %"+(aName)+", align 4");
 				}
 				else if(attr.typeid.equals("String")){
-					val = evalExpr(cls, attr.value, out, varName, amap, false);
+					val = evalExpr(cls, attr.value, out, varName, amap, tmap, false);
 					out.println("store i8* %" + (varName.value-1) + ", i8** %"+ (aName) +", align 8");
 				}
 				else{
 					if(!attr.value.type.equals(attr.typeid)){
-						val = evalExpr(cls, attr.value, out, varName, amap, true);
+						val = evalExpr(cls, attr.value, out, varName, amap, tmap, true);
 						addCast(attr.typeid, attr.value.type);
 						out.println("call void @CAST_" + attr.typeid + "_" + attr.value.type + "(" + getTypePointer(attr.typeid) + " %" + amap.get(attr.name) + ", " + getTypePointer(attr.value.type) + " " + val + ")");
 					}
 					else{
-						val = evalExpr(cls, attr.value, out, varName, amap, false);
+						val = evalExpr(cls, attr.value, out, varName, amap, tmap, false);
 						out.println("store " + getType(attr.typeid) + " " + val + ", " + getType(attr.typeid) + "* %" + aName);
 					}
 				}
@@ -409,7 +426,7 @@ public class Codegen{
 		return finalStr;
 	}
 
-	private String evalExpr(ClassPlus cls, AST.expression expr, PrintWriter out, IntPointer varNameStart, HashMap<String,Integer> aMap, boolean needPointer){
+	private String evalExpr(ClassPlus cls, AST.expression expr, PrintWriter out, IntPointer varNameStart, HashMap<String,Integer> aMap, HashMap<String,String> tMap, boolean needPointer){
 		if(expr instanceof AST.string_const){
 			String val = ((AST.string_const) expr).value;
 			buffer += "@str."+(global++)+" = private unnamed_addr constant ["+(val.length()+1)+" x i8] c\"" + writeStr(val) + "\\00\", align 1\n";
@@ -431,63 +448,63 @@ public class Codegen{
 		}
 		else if(expr instanceof AST.comp){
 			AST.comp finalExpr = (AST.comp) expr;
-			String val = evalExpr(cls, finalExpr.e1, out, varNameStart, aMap, false);
+			String val = evalExpr(cls, finalExpr.e1, out, varNameStart, aMap, tMap, false);
 			out.println("%" + (varNameStart.value++) + " = xor i1 " + val + ", true");
 			return needPointer ? writeStore(out, "%" + (varNameStart.value-1), varNameStart, "Bool") : "%" + (varNameStart.value-1);
 		}
 		else if(expr instanceof AST.eq){
 			AST.eq finalExpr = (AST.eq) expr;
-			String val1 = evalExpr(cls, finalExpr.e1, out, varNameStart, aMap, false);
-			String val2 = evalExpr(cls, finalExpr.e2, out, varNameStart, aMap, false);
+			String val1 = evalExpr(cls, finalExpr.e1, out, varNameStart, aMap, tMap, false);
+			String val2 = evalExpr(cls, finalExpr.e2, out, varNameStart, aMap, tMap, false);
 			out.println("%" + (varNameStart.value++) + " = icmp eq i32 " + val1 + ", " + val2);
 			return needPointer ? writeStore(out, "%" + (varNameStart.value-1), varNameStart, "Bool") : "%" + (varNameStart.value-1);
 		}
 		else if(expr instanceof AST.leq){
 			AST.leq finalExpr = (AST.leq) expr;
-			String val1 = evalExpr(cls, finalExpr.e1, out, varNameStart, aMap, false);
-			String val2 = evalExpr(cls, finalExpr.e2, out, varNameStart, aMap, false);
+			String val1 = evalExpr(cls, finalExpr.e1, out, varNameStart, aMap, tMap, false);
+			String val2 = evalExpr(cls, finalExpr.e2, out, varNameStart, aMap, tMap, false);
 			out.println("%" + (varNameStart.value++) + " = icmp slt i32 " + val1 + ", " + val2);
 			return needPointer ? writeStore(out, "%" + (varNameStart.value-1), varNameStart, "Bool") : "%" + (varNameStart.value-1);
 		}
 		else if(expr instanceof AST.neg){
 			AST.neg finalExpr = (AST.neg) expr;
-			String val = evalExpr(cls, finalExpr.e1, out, varNameStart, aMap, false);
+			String val = evalExpr(cls, finalExpr.e1, out, varNameStart, aMap, tMap, false);
 			out.println("%" + (varNameStart.value++) + " = mul nsw i32 " + val + ", -1");
 			return needPointer ? writeStore(out, "%" + (varNameStart.value-1), varNameStart, "Int") : "%" + (varNameStart.value-1);
 		}
 		else if(expr instanceof AST.plus){
 			AST.plus finalExpr = (AST.plus) expr;
-			String left = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, false), right = evalExpr(cls, finalExpr.e2,out,varNameStart, aMap, false);
+			String left = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, tMap, false), right = evalExpr(cls, finalExpr.e2,out,varNameStart, aMap, tMap, false);
 			out.println("%" + (varNameStart.value++) + " = add nsw i32 " + left + ", " + right);
 			return needPointer ? writeStore(out, "%"+String.valueOf(varNameStart.value-1), varNameStart, "Int") : "%"+String.valueOf(varNameStart.value-1);
 		}
 		else if(expr instanceof AST.sub){
 			AST.sub finalExpr = (AST.sub) expr;
-			String left = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, false), right = evalExpr(cls, finalExpr.e2,out,varNameStart, aMap, false);
+			String left = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, tMap, false), right = evalExpr(cls, finalExpr.e2,out,varNameStart, aMap, tMap, false);
 			out.println("%" + (varNameStart.value++) + " = sub nsw i32 " + left + ", " + right);
 			return needPointer ? writeStore(out, "%"+String.valueOf(varNameStart.value-1), varNameStart, "Int") : "%"+String.valueOf(varNameStart.value-1);
 		}
 		else if(expr instanceof AST.mul){
 			AST.mul finalExpr = (AST.mul) expr;
-			String left = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, false), right = evalExpr(cls, finalExpr.e2,out,varNameStart, aMap, false);
+			String left = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, tMap, false), right = evalExpr(cls, finalExpr.e2,out,varNameStart, aMap, tMap, false);
 			out.println("%" + (varNameStart.value++) + " = mul nsw i32 " + left + ", " + right);
 			return needPointer ? writeStore(out, "%"+String.valueOf(varNameStart.value-1), varNameStart, "Int") : "%"+String.valueOf(varNameStart.value-1);
 		}
 		else if(expr instanceof AST.divide){
 			AST.divide finalExpr = (AST.divide) expr;
-			String left = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, false), right = evalExpr(cls, finalExpr.e2,out,varNameStart, aMap, false);
+			String left = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, tMap, false), right = evalExpr(cls, finalExpr.e2,out,varNameStart, aMap, tMap, false);
 			String divRes = writeAlloc(out, varNameStart, "i32");
-			if(!(finalExpr.e2 instanceof AST.int_const) || (finalExpr.e2 instanceof AST.int_const && evalExpr(cls, finalExpr.e2, out, varNameStart, aMap, false).equals("0"))){
+			if(!(finalExpr.e2 instanceof AST.int_const) || (finalExpr.e2 instanceof AST.int_const && evalExpr(cls, finalExpr.e2, out, varNameStart, aMap, tMap, false).equals("0"))){
 				out.println("%" + (varNameStart.value++) + " = icmp ne i32 0, " + right);
 				out.print("br i1 %" + (varNameStart.value-1) + ", label %" + (varNameStart.value++) + ", label %" + (varNameStart.value+1) + "\n");
 			}// 					0										1											3
 			out.println("%" + (varNameStart.value++) + " = sdiv i32 " + left + ", " + right);
 			writeStore(out, "%" + (varNameStart.value-1), divRes, "Int");
 			//
-			if(!(finalExpr.e2 instanceof AST.int_const) || (finalExpr.e2 instanceof AST.int_const && evalExpr(cls, finalExpr.e2, out, varNameStart, aMap, false).equals("0"))){
+			if(!(finalExpr.e2 instanceof AST.int_const) || (finalExpr.e2 instanceof AST.int_const && evalExpr(cls, finalExpr.e2, out, varNameStart, aMap, tMap, false).equals("0"))){
 				out.println("br label %" + (varNameStart.value+6));
 				varNameStart.value++;
-				evalExpr(cls, divErr, out, varNameStart, aMap, needPointer);
+				evalExpr(cls, divErr, out, varNameStart, aMap, tMap, needPointer);
 				out.println("call void @exit(i32 1)\n");
 				out.println("br label %" + (varNameStart.value++));
 			}
@@ -495,24 +512,34 @@ public class Codegen{
 		}
 		else if(expr instanceof AST.isvoid){
 			AST.isvoid finalExpr = (AST.isvoid) expr;
-			String e1 = evalExpr(cls, finalExpr.e1, out, varNameStart, aMap, true);
+			String e1 = evalExpr(cls, finalExpr.e1, out, varNameStart, aMap, tMap, true);
 			out.println("%" + (varNameStart.value++) + " = icmp eq " + getType(finalExpr.e1.type) + "* " + e1 + ", null");
 			return needPointer ? writeStore(out, "%" + (varNameStart.value-1), varNameStart, "Bool") : "%" + (varNameStart.value-1);
 		}
 		else if(expr instanceof AST.assign){
 			AST.assign finalExpr = (AST.assign) expr;
 			String right = "";
-			int varNum = aMap.get(finalExpr.name);
+			int varNum = aMap.get(finalExpr.name) - (typeMap.containsKey(tMap.get(finalExpr.name)) ? 0 : 1);
 			System.out.println("Assgn ");
-			if(!cls.alist.get(finalExpr.name).typeid.equals(finalExpr.e1.type)){
-				right = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, true);
-				addCast(cls.alist.get(finalExpr.name).typeid, finalExpr.e1.type);
-				out.println("call void @CAST_" + cls.alist.get(finalExpr.name).typeid + "_" + finalExpr.e1.type + "( " + getType(cls.alist.get(finalExpr.name).typeid) + "* %" + varNum + ", " + getTypePointer(finalExpr.e1.type) + " " + right + " )");
-				return needPointer ? right : writeLoad(out, varNameStart, right, finalExpr.e1.type);
+			if(!tMap.get(finalExpr.name).equals(finalExpr.e1.type)){
+				right = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, tMap, true);
+				addCast(tMap.get(finalExpr.name), finalExpr.e1.type);
+				String allocPoi = writeAlloc(out, varNameStart, getType(tMap.get(finalExpr.name)));
+				out.println("call void @CAST_" + tMap.get(finalExpr.name) + "_" + finalExpr.e1.type + "( " + getType(tMap.get(finalExpr.name)) + "* " + allocPoi + ", " + getTypePointer(finalExpr.e1.type) + " " + right + " )");
+				String loaded = writeLoad(out, varNameStart, allocPoi, tMap.get(finalExpr.name));
+				writeStore(out, loaded, "%" + aMap.get(finalExpr.name), tMap.get(finalExpr.name));
+				return needPointer ? right : loaded;
+			}
+			else if(!typeMap.containsKey(tMap.get(finalExpr.name))){
+				right = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, tMap, true);
+				String loaded = writeLoad(out, varNameStart, right, tMap.get(finalExpr.name));
+				writeStore(out, loaded, "%" + aMap.get(finalExpr.name), tMap.get(finalExpr.name));
+				return needPointer ? right : loaded;
+				//out.println("store " + getType(finalExpr.type) + " " + right + ", " + getType(finalExpr.type) + "* %" + varNum + ", align 4");
 			}
 			else{
-				right = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, false);
-				writeStore(out, right, "%"+varNum, finalExpr.type);
+				right = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, tMap, true);
+				writeStore(out, right, "%"+varNum, getType(finalExpr.type), true);
 				return needPointer ? "%"+varNum : right;
 				//out.println("store " + getType(finalExpr.type) + " " + right + ", " + getType(finalExpr.type) + "* %" + varNum + ", align 4");
 			}
@@ -553,7 +580,7 @@ public class Codegen{
 			AST.block finalExpr = (AST.block) expr;
 			String val = "";
 			for(AST.expression e: finalExpr.l1){
-				val = evalExpr(cls, e, out, varNameStart, aMap, needPointer);
+				val = evalExpr(cls, e, out, varNameStart, aMap, tMap, needPointer);
 			}
 			return val;
 		}
@@ -563,9 +590,9 @@ public class Codegen{
 			AST.method callingMeth = callingCls.mlist.get(finalExpr.name);
 			mthdsToWrite.put(callingMeth, callingCls);
 			System.out.println("Stat dsi on " + callingCls.name + " on " + callingMeth.name);
-			String callVarName = evalExpr(cls, finalExpr.caller, out, varNameStart, aMap,true);
+			String callVarName = evalExpr(cls, finalExpr.caller, out, varNameStart, aMap, tMap,true);
 			String retType = callingMeth.typeid.equals("SELF_TYPE") ? finalExpr.typeid : callingMeth.typeid;
-
+			mthdsToWrite.put(classMap.get("IO").mlist.get("out_string"), classMap.get("IO"));
 			if(!finalExpr.typeid.equals(finalExpr.caller.type)){
 				addCast(finalExpr.typeid, finalExpr.caller.type);
 				String callCastVal = writeAlloc(out, varNameStart, getType(finalExpr.typeid));
@@ -575,7 +602,7 @@ public class Codegen{
 			boolean predef = preDefMthds.contains(finalExpr.name) && callingCls.mlist.get(finalExpr.name).body instanceof AST.no_expr;
 			String callStr = ("call " + getType(retType) + (predef ? "" : "*") + " @" + finalExpr.name + "_" + finalExpr.typeid + "(" + getTypePointer(callingCls.name) + " " + callVarName);// Add actuals and case of strings
 			for(int i = 0; i < callingMeth.formals.size() ; ++i){
-				String val = evalExpr(cls, finalExpr.actuals.get(i), out, varNameStart, aMap, true);
+				String val = evalExpr(cls, finalExpr.actuals.get(i), out, varNameStart, aMap, tMap, true);
 				if(!finalExpr.actuals.get(i).type.equals(callingMeth.formals.get(i).typeid)){
 					addCast(callingMeth.formals.get(i).typeid, finalExpr.actuals.get(i).type);
 					String castVal = writeAlloc(out, varNameStart, getType(callingMeth.formals.get(i).typeid));
@@ -606,13 +633,13 @@ public class Codegen{
 		else if(expr instanceof AST.cond){
 			AST.cond finalExpr = (AST.cond) expr;
 			String ifbody = "", elsebody = "",ifval = "", elseval = "";
-			String cond = evalExpr(cls, finalExpr.predicate, out, varNameStart, aMap, false);
+			String cond = evalExpr(cls, finalExpr.predicate, out, varNameStart, aMap, tMap, false);
 			String finalVar = writeAlloc(out, varNameStart, needPointer ? getTypePointer(finalExpr.type) : getType(finalExpr.type));
 			out.print("br i1 " + cond);
 			int iflabel = varNameStart.value++;
 			StringWriter buffStr = new StringWriter();
 			PrintWriter buffer = new PrintWriter(buffStr);
-			ifval = evalExpr(cls, finalExpr.ifbody, buffer, varNameStart, aMap, needPointer);
+			ifval = evalExpr(cls, finalExpr.ifbody, buffer, varNameStart, aMap, tMap, needPointer);
 			if(!finalExpr.type.equals(finalExpr.ifbody.type)){
 				addCast(finalExpr.type, finalExpr.ifbody.type);
 				buffer.println("call void @CAST_" + finalExpr.type + "_" + finalExpr.ifbody.type + "( " + getType(finalExpr.type) + "* " + (varNameStart.value++) + ", " + getTypePointer(finalExpr.ifbody.type) + " " + ifval + " )");
@@ -624,7 +651,7 @@ public class Codegen{
 			ifbody = buffStr.toString();
 			buffStr = new StringWriter();
 			buffer = new PrintWriter(buffStr);
-			elseval = evalExpr(cls, finalExpr.elsebody, buffer, varNameStart, aMap, needPointer);
+			elseval = evalExpr(cls, finalExpr.elsebody, buffer, varNameStart, aMap, tMap, needPointer);
 			if(!finalExpr.type.equals(finalExpr.elsebody.type)){
 				addCast(finalExpr.type, finalExpr.elsebody.type);
 				buffer.println("call void @CAST_" + finalExpr.type + "_" + finalExpr.elsebody.type + "( " + getType(finalExpr.type) + "* " + (varNameStart.value++) + ", " + getTypePointer(finalExpr.elsebody.type) + " " + elseval + " )");
@@ -645,12 +672,12 @@ public class Codegen{
 			AST.loop finalExpr = (AST.loop) expr;
 			out.println("br label %" + (varNameStart.value++));
 			String loopStrt = "%" + (varNameStart.value-1);
-			String pred = evalExpr(cls, finalExpr.predicate, out, varNameStart, aMap, false);
+			String pred = evalExpr(cls, finalExpr.predicate, out, varNameStart, aMap, tMap, false);
 			out.print("br i1 " + pred + ", label %" + (varNameStart.value++) + ", label %");
 
 			StringWriter buffStr = new StringWriter();
 			PrintWriter buffer = new PrintWriter(buffStr);
-			evalExpr(cls, finalExpr.body, buffer, varNameStart, aMap, false);
+			evalExpr(cls, finalExpr.body, buffer, varNameStart, aMap, tMap, false);
 			buffer.println("br label " + loopStrt);
 			out.println(varNameStart.value);
 			out.println(buffStr.toString());
