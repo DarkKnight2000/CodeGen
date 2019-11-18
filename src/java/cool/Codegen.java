@@ -229,12 +229,26 @@ public class Codegen{
 		ArrayList<String> anames = new ArrayList<String>(cls.alist.keySet());
 		String thisVar = "%this";
 		if(mthd.name.equals("main") && cls.name.equals("Main")){
+			String thisVarPoi = writeAlloc(out, varName, getTypePointer(cls.name));
 			thisVar = writeAlloc(out, varName, getType(cls.name));
+			writeStore(out, thisVar, thisVarPoi, getTypePointer(cls.name), true);
+			thisVar = writeLoad(out, varName, thisVarPoi, getTypePointer(cls.name), true);
+			int k = 0;
+			for(String a: classMap.get("Main").alist.keySet()){
+				AST.attr tempat = classMap.get("Main").alist.get(a);
+				if(!typeMap.containsKey(tempat.typeid)){
+					k++;
+					String tempatalloc = writeAlloc(out, varName, getType(tempat.typeid));
+					out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (cls.name) + ", %class." + (cls.name) + "* " + thisVar + ", i32 0, i32 " + (attrNumMap.get("Main").get(tempat.name)-k) + "; " + tempat.name);
+					writeStore(out, tempatalloc, "%" + (varName.value-1), getTypePointer(tempat.typeid), true);
+				}
+			}
 		}
 		out.println("call void @INIT_" + cls.name + "(" + getTypePointer(cls.name) + " " + thisVar + ")");
 		for(int j=0;j<cls.alist.size();++j) {
 			AST.attr attr = cls.alist.get(anames.get(j));
 			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (cls.name) + ", %class." + (cls.name) + "* " + thisVar + ", i32 0, i32 " + j + "; " + attr.name);
+			if(!typeMap.containsKey(attr.typeid)) writeLoad(out, varName, "%" + (varName.value-1), getTypePointer(attr.typeid), true);
 			aMap.put(attr.name, varName.value-1);
 		}
 		if(mthd.body.type.equals(mthd.typeid)){
@@ -282,7 +296,7 @@ public class Codegen{
 		//checkForWrite(cls);
 		out.print("\n%class."+cls.name+" = type{ ");
 		String s = "";
-		for(AST.attr a: cls.alist.values()) s += getType(a.typeid) +", ";
+		for(AST.attr a: cls.alist.values()) s += getType(a.typeid) + (typeMap.containsKey(a.typeid) ? "" : "*") +", ";
 		if(!s.isEmpty()) s = s.substring(0, s.length() - 2);
 		out.println(s+" }");
 	}
@@ -297,6 +311,7 @@ public class Codegen{
 		for(int i=0;i<cls.alist.size();++i) {
 			AST.attr attr = cls.alist.get(anames.get(i));
 			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (cls.name) + ", %class." + (cls.name) + "* %this, i32 0, i32 " + i + "; " + attr.name);
+			if(!typeMap.containsKey(attr.typeid)) writeLoad(out, varName, "%" + (varName.value-1), getTypePointer(attr.typeid), true);
 			amap.put(attr.name, varName.value-1);
 		}
 		attrNumMap.put(cls.name, amap);
@@ -371,6 +386,10 @@ public class Codegen{
 		out.println("%" + (b.value++) + " = alloca " + getType(type) + ", align 8");
 		out.println("store " + getType(type) + " " + a + ", " + getType(type) + "* %" + (b.value-1));
 		return "%"+(b.value-1);
+	}
+	private String writeStore(PrintWriter out, String a, String b, String type, boolean typeFlag){
+		out.println("store " + type + " " + a + ", " + type + "* " + b);
+		return a;
 	}
 	private String writeAlloc(PrintWriter out, IntPointer b, String typeString){
 		out.println("%" + (b.value++) + " = alloca " + typeString);
@@ -545,13 +564,14 @@ public class Codegen{
 			mthdsToWrite.put(callingMeth, callingCls);
 			System.out.println("Stat dsi on " + callingCls.name + " on " + callingMeth.name);
 			String callVarName = evalExpr(cls, finalExpr.caller, out, varNameStart, aMap,true);
+			String retType = callingMeth.typeid.equals("SELF_TYPE") ? finalExpr.typeid : callingMeth.typeid;
+
 			if(!finalExpr.typeid.equals(finalExpr.caller.type)){
 				addCast(finalExpr.typeid, finalExpr.caller.type);
 				String callCastVal = writeAlloc(out, varNameStart, getType(finalExpr.typeid));
 				out.println("call void @CAST_" + finalExpr.typeid + "_" + finalExpr.caller.type + "( " + getType(finalExpr.typeid) + "* " + callCastVal + ", " + getTypePointer(finalExpr.caller.type) + " " + callVarName + " )");
 				callVarName = callCastVal;
 			}
-			String retType = callingMeth.typeid.equals("SELF_TYPE") ? finalExpr.typeid : callingMeth.typeid;
 			boolean predef = preDefMthds.contains(finalExpr.name) && callingCls.mlist.get(finalExpr.name).body instanceof AST.no_expr;
 			String callStr = ("call " + getType(retType) + (predef ? "" : "*") + " @" + finalExpr.name + "_" + finalExpr.typeid + "(" + getTypePointer(callingCls.name) + " " + callVarName);// Add actuals and case of strings
 			for(int i = 0; i < callingMeth.formals.size() ; ++i){
