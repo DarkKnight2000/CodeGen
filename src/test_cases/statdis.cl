@@ -6,8 +6,6 @@ class Main {
     e:A;
 	main():Int{{
 		d@A.f();
-        -- Checking what happens whn a null value is passed to static dispatch
-		d@B.g(e,c);
 		e;
 		a <- new Int;
 		c@A.abort();
