@@ -7,13 +7,15 @@ import java.util.*;
 import cool.AST.expression;
 
 public class Codegen{
-	private ArrayList<String> ClsToWrite, baseClasses;
+	private ArrayList<String> ClsToWrite, baseClasses, preDefMthds;
 	private ArrayList<AST.method> allWrittenMthds;
 	private HashMap<AST.method, ClassPlus> mthdsToWrite, mthdsWriting;
 	private HashMap<String,ClassPlus>classMap;
 	private HashMap<String,String> typeMap;
 	private HashMap<String,HashSet<String>> castToWrite;
 	private HashMap<String, ArrayList<AST.class_>> inherGraph;
+	private HashMap<String, ArrayList<AST.attr>> initOrder;
+	private HashMap<String, HashMap<String , Integer>> attrNumMap;
 	private int global = 0; 
 	private String buffer = "";
 	AST.static_dispatch divErr, voidErr;
@@ -27,11 +29,14 @@ public class Codegen{
 		mthdsWriting = new HashMap<AST.method, ClassPlus>();
 		allWrittenMthds = new ArrayList<AST.method>();
 		inherGraph = new HashMap<String, ArrayList<AST.class_>>();
+		initOrder = new HashMap<String, ArrayList<AST.attr>>();
+		attrNumMap = new HashMap<String, HashMap<String , Integer>>();
 		typeMap.put("Int","i32");
 		typeMap.put("Bool", "i1");
 		typeMap.put("String", "i8*");
 		ClsToWrite = new ArrayList<String>();
 		baseClasses = new ArrayList<String>(Arrays.asList("Object", "IO", "Int", "String", "Bool"));
+		preDefMthds = new ArrayList<String>(Arrays.asList("abort", "type_name", "copy", "out_string", "out_int", "in_int", "in_string", "concat", "substr", "length"));
 		divErr = new AST.static_dispatch(new AST.new_("IO", 0), "IO", "out_string", new ArrayList<expression>(Arrays.asList((AST.expression) new AST.string_const("Error: Division by 0.\n", 0))), 0);
 		divErr.type = "IO";
 		divErr.caller.type = "IO";
@@ -118,83 +123,85 @@ public class Codegen{
 	}
 	private void writeMethod(PrintWriter out, AST.method meth, ClassPlus cls){
 		//checkForWrite(meth);
-		if(meth.name.equals("abort")){// Working
-			out.print("\ndefine %class.Object @abort_" + cls.name + "(" + getType(cls.name)+"* %this " + "){\nentry:");
-			out.println("call void @exit(i32 0)\n");
-			out.println("ret %class.Object " + writeLoad(out, "%1", writeAlloc(out, new IntPointer(), "%class.Object"), "Object") + "\n}\n");
-		}
-		else if(meth.name.equals("type_name")){// Working
-			out.print("\ndefine i8* @type_name_" + cls.name + "(" + getType(cls.name)+"* %this " + "){\nentry:\n");
-			buffer += "@str."+(global++)+" = private unnamed_addr constant ["+(cls.name.length()+1)+" x i8] c\"" + writeStr(cls.name) + "\\00\", align 1\n";
-			out.println("%0 = bitcast [" + (cls.name.length()+1) + " x i8]* @str." + (global-1) + " to i8* ");
-			out.println("ret i8* %0\n}");
-			out.print(buffer);
-		}
-		else if(meth.name.equals("length")){// Working
-			out.println("\ndefine i32 @length_" + cls.name + "( i8** ){\nentry:");
-			out.println("%2 = call i64 @strlen( i8* " + writeLoad(out, "%1", "%0", "String") + " )");
-			out.println("%3 = trunc i64 %2 to i32\n");
-			out.println("ret i32" + " %3\n}");
-		}
-		else if(meth.name.equals("concat")){// Not working
-			out.println("\ndefine i8* @concat_" + cls.name + "( i8**, i8** ){\nentry:");
-			out.println("%4 = call i8* @strcat( i8* " + writeLoad(out, "%2", "%0", "String") + ", i8* " + writeLoad(out, "%3", "%1", "String") + " )");
-			//out.println("%5 = call i8* @malloc( i64 128 )");
-			out.println("%5 = bitcast i8* %4 to i8*");
-			out.println("ret i8* %5\n}");
-		}
-		else if(meth.name.equals("substr")){// Not working
-			out.println("\ndefine i8* @substr_" + cls.name + "( i8**, i32* %sp, i32* %lp){\nentry:");
-			writeLoad(out, "%start", "%sp", "Int");
-			writeLoad(out, "%len", "%lp", "Int");
-			out.println("%sps = getelementptr inbounds i8*, i8** %0, i32 0, i32 0");
-			out.println("%1 = getelementptr inbounds i8, i8* %sps, i32 0, i32 %start");
-			out.println("%2 = call i8* @malloc( i64 1024 )");
-			out.println("%3 = call i8* @strncpy( i8* %2, i8* %0, i32 %len )");
-			out.println("%4 = getelementptr inbounds [1024 x i8], [1024 x i8]* %retval, i32 0, i32 %len");
-			out.println("store i8 0, i8* %4");
-			out.println("ret i32" + " %3\n}");
-		}
-		else if(meth.name.equals("out_string")){// Working
-			out.println("\ndefine " + getType(cls.name) + " @out_string_" + cls.name + "( " + getType(cls.name) + "* %this, i8** %x){\nentry:");
-			writeLoad(out, "%0", "%x", "String");
-			out.println("%1 = call i32 (i8*, ...) @printf( i8* bitcast ( [3 x i8]* @strfors to i8* ), i8* %0 )");
-			out.println("ret " + getType(cls.name) + " " + writeLoad(out, "%2", "%this" ,cls.name) + " \n}");
-			//out.println("attributes #1 = { \"correctly-rounded-divide-sqrt-fp-math\"=\"false\" \"disable-tail-calls\"=\"false\" \"less-precise-fpmad\"=\"false\" \"no-frame-pointer-elim\"=\"true\" \"no-frame-pointer-elim-non-leaf\" \"no-infs-fp-math\"=\"false\" \"no-nans-fp-math\"=\"false\" \"no-signed-zeros-fp-math\"=\"false\" \"no-trapping-math\"=\"false\" \"stack-protector-buffer-size\"=\"8\" \"target-cpu\"=\"x86-64\" \"target-features\"=\"+fxsr,+mmx,+sse,+sse2,+x87\" \"unsafe-fp-math\"=\"false\" \"use-soft-float\"=\"false\" }");
-			if(!typeMap.containsKey("@strfors")){
-				out.println("@strfors = private unnamed_addr constant [3 x i8] c\"%s\\00\"\n");
-				typeMap.put("@strfors", "[3 x i8]*");
+		if(meth.body instanceof AST.no_expr){
+			if(meth.name.equals("abort")){// Working
+				out.print("\ndefine %class.Object @abort_" + cls.name + "(" + getType(cls.name)+"* %this " + "){\nentry:");
+				out.println("call void @exit(i32 0)\n");
+				out.println("ret %class.Object " + writeLoad(out, "%1", writeAlloc(out, new IntPointer(), "%class.Object"), "Object") + "\n}\n");
 			}
-		}
-		else if(meth.name.equals("out_int")){// Working
-			out.println("\ndefine " + getType(cls.name) + " @out_int_" + cls.name + "( " + getType(cls.name) + "* %this, i32* %x) #0{\nentry:");
-			writeLoad(out, "%0", "%x", "Int");
-			out.println("%1 = call i32 (i8*, ...) @printf( i8* bitcast ( [3 x i8]* @strfori to i8* ), i32 %0 )");
-			out.println("ret " + getType(cls.name) + " " + writeLoad(out, "%2", "%this" ,cls.name) + " \n}");
-			if(!typeMap.containsKey("@strfori")){
-				out.println("@strfori = private unnamed_addr constant [3 x i8] c\"%d\\00\"\n");
-				typeMap.put("@strfori", "[3 x i8]*");
+			else if(meth.name.equals("type_name")){// Working
+				out.print("\ndefine i8* @type_name_" + cls.name + "(" + getType(cls.name)+"* %this " + "){\nentry:\n");
+				buffer += "@str."+(global++)+" = private unnamed_addr constant ["+(cls.name.length()+1)+" x i8] c\"" + writeStr(cls.name) + "\\00\", align 1\n";
+				out.println("%0 = bitcast [" + (cls.name.length()+1) + " x i8]* @str." + (global-1) + " to i8* ");
+				out.println("ret i8* %0\n}");
+				out.print(buffer);
 			}
-		}
-		else if(meth.name.equals("in_int")){// Working
-			out.println("\ndefine i32 @in_int_" + cls.name + "( " + getType(cls.name) + "* %this ) #0{\nentry:");
-			out.println("%0 = call i8* @malloc( i64 4 )");
-			out.println("%1 = bitcast i8* %0 to i32*");
-			out.println("%2 = call i32 (i8*, ...) @scanf( i8* bitcast ( [3 x i8]* @strfori to i8* ), i32* %1 )");
-			out.println("ret i32 " + writeLoad(out, "%3", "%1", "Int") + "\n}");
-			if(!typeMap.containsKey("@strfori")){
-				out.println("@strfori = private unnamed_addr constant [3 x i8] c\"%d\\00\"\n");
-				typeMap.put("@strfori", "[3 x i8]*");
+			else if(meth.name.equals("length")){// Working
+				out.println("\ndefine i32 @length_" + cls.name + "( i8** ){\nentry:");
+				out.println("%2 = call i64 @strlen( i8* " + writeLoad(out, "%1", "%0", "String") + " )");
+				out.println("%3 = trunc i64 %2 to i32\n");
+				out.println("ret i32" + " %3\n}");
 			}
-		}
-		else if(meth.name.equals("in_string")){// Working
-			out.println("\ndefine i8* @in_string_" + cls.name + "( " + getType(cls.name) + "* %this ) #0{\nentry:");
-			out.println("%0 = call i8* @malloc( i64 1024 )");
-			out.println("%1 = call i32 (i8*, ...) @scanf( i8* bitcast ( [3 x i8]* @strfors to i8* ), i8* %0 )");
-			out.println("ret i8* %0\n}");
-			if(!typeMap.containsKey("@strfors")){
-				out.println("@strfors = private unnamed_addr constant [3 x i8] c\"%s\\00\"\n");
-				typeMap.put("@strfors", "[3 x i8]*");
+			else if(meth.name.equals("concat")){// Not working
+				out.println("\ndefine i8* @concat_" + cls.name + "( i8**, i8** ){\nentry:");
+				out.println("%4 = call i8* @strcat( i8* " + writeLoad(out, "%2", "%0", "String") + ", i8* " + writeLoad(out, "%3", "%1", "String") + " )");
+				//out.println("%5 = call i8* @malloc( i64 128 )");
+				out.println("%5 = bitcast i8* %4 to i8*");
+				out.println("ret i8* %5\n}");
+			}
+			else if(meth.name.equals("substr")){// Not working
+				out.println("\ndefine i8* @substr_" + cls.name + "( i8**, i32* %sp, i32* %lp){\nentry:");
+				writeLoad(out, "%start", "%sp", "Int");
+				writeLoad(out, "%len", "%lp", "Int");
+				out.println("%sps = getelementptr inbounds i8*, i8** %0, i32 0, i32 0");
+				out.println("%1 = getelementptr inbounds i8, i8* %sps, i32 0, i32 %start");
+				out.println("%2 = call i8* @malloc( i64 1024 )");
+				out.println("%3 = call i8* @strncpy( i8* %2, i8* %0, i32 %len )");
+				out.println("%4 = getelementptr inbounds [1024 x i8], [1024 x i8]* %retval, i32 0, i32 %len");
+				out.println("store i8 0, i8* %4");
+				out.println("ret i32" + " %3\n}");
+			}
+			else if(meth.name.equals("out_string")){// Working
+				out.println("\ndefine " + getType(cls.name) + " @out_string_" + cls.name + "( " + getType(cls.name) + "* %this, i8** %x){\nentry:");
+				writeLoad(out, "%0", "%x", "String");
+				out.println("%1 = call i32 (i8*, ...) @printf( i8* bitcast ( [3 x i8]* @strfors to i8* ), i8* %0 )");
+				out.println("ret " + getType(cls.name) + " " + writeLoad(out, "%2", "%this" ,cls.name) + " \n}");
+				//out.println("attributes #1 = { \"correctly-rounded-divide-sqrt-fp-math\"=\"false\" \"disable-tail-calls\"=\"false\" \"less-precise-fpmad\"=\"false\" \"no-frame-pointer-elim\"=\"true\" \"no-frame-pointer-elim-non-leaf\" \"no-infs-fp-math\"=\"false\" \"no-nans-fp-math\"=\"false\" \"no-signed-zeros-fp-math\"=\"false\" \"no-trapping-math\"=\"false\" \"stack-protector-buffer-size\"=\"8\" \"target-cpu\"=\"x86-64\" \"target-features\"=\"+fxsr,+mmx,+sse,+sse2,+x87\" \"unsafe-fp-math\"=\"false\" \"use-soft-float\"=\"false\" }");
+				if(!typeMap.containsKey("@strfors")){
+					out.println("@strfors = private unnamed_addr constant [3 x i8] c\"%s\\00\"\n");
+					typeMap.put("@strfors", "[3 x i8]*");
+				}
+			}
+			else if(meth.name.equals("out_int")){// Working
+				out.println("\ndefine " + getType(cls.name) + " @out_int_" + cls.name + "( " + getType(cls.name) + "* %this, i32* %x) #0{\nentry:");
+				writeLoad(out, "%0", "%x", "Int");
+				out.println("%1 = call i32 (i8*, ...) @printf( i8* bitcast ( [3 x i8]* @strfori to i8* ), i32 %0 )");
+				out.println("ret " + getType(cls.name) + " " + writeLoad(out, "%2", "%this" ,cls.name) + " \n}");
+				if(!typeMap.containsKey("@strfori")){
+					out.println("@strfori = private unnamed_addr constant [3 x i8] c\"%d\\00\"\n");
+					typeMap.put("@strfori", "[3 x i8]*");
+				}
+			}
+			else if(meth.name.equals("in_int")){// Working
+				out.println("\ndefine i32 @in_int_" + cls.name + "( " + getType(cls.name) + "* %this ) #0{\nentry:");
+				out.println("%0 = call i8* @malloc( i64 4 )");
+				out.println("%1 = bitcast i8* %0 to i32*");
+				out.println("%2 = call i32 (i8*, ...) @scanf( i8* bitcast ( [3 x i8]* @strfori to i8* ), i32* %1 )");
+				out.println("ret i32 " + writeLoad(out, "%3", "%1", "Int") + "\n}");
+				if(!typeMap.containsKey("@strfori")){
+					out.println("@strfori = private unnamed_addr constant [3 x i8] c\"%d\\00\"\n");
+					typeMap.put("@strfori", "[3 x i8]*");
+				}
+			}
+			else if(meth.name.equals("in_string")){// Working
+				out.println("\ndefine i8* @in_string_" + cls.name + "( " + getType(cls.name) + "* %this ) #0{\nentry:");
+				out.println("%0 = call i8* @malloc( i64 1024 )");
+				out.println("%1 = call i32 (i8*, ...) @scanf( i8* bitcast ( [3 x i8]* @strfors to i8* ), i8* %0 )");
+				out.println("ret i8* %0\n}");
+				if(!typeMap.containsKey("@strfors")){
+					out.println("@strfors = private unnamed_addr constant [3 x i8] c\"%s\\00\"\n");
+					typeMap.put("@strfors", "[3 x i8]*");
+				}
 			}
 		}
 		else{
@@ -250,7 +257,7 @@ public class Codegen{
 		s += getType(clsChild.name)+"* %chld, ";
 		if (!s.equals("")) s = s.substring(0, s.length() - 2);
 		s += ") #0 {\nentry:";
-		out.print(s);
+		out.println(s);
 		IntPointer varName = new IntPointer();
 		ArrayList<String> aparnames = new ArrayList<String>();
 		aparnames.addAll(clsPar.alist.keySet());
@@ -258,10 +265,11 @@ public class Codegen{
 		achldnames.addAll(clsPar.alist.keySet());
 		if(!achldnames.equals(aparnames)) System.out.println("Error casting");
 		for(int i=0; i<aparnames.size(); ++i){
-			String atype = clsPar.alist.get(aparnames.get(i)).typeid;
+			AST.attr presA = clsPar.alist.get(aparnames.get(i));
+			String atype = presA.typeid;
 			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (clsPar.name) + ", %class." + (clsPar.name) + "* %par, i32 0, i32 " + i);
 			//System.out.println("par-"+clsPar.alist.get(anames.get(i)));
-			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (clsChild.name) + ", %class." + (clsChild.name) + "* %chld, i32 0, i32 " + i);
+			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (clsChild.name) + ", %class." + (clsChild.name) + "* %chld, i32 0, i32 " + attrNumMap.get(clsChild.name).get(presA.name));
 			//System.out.println("child-"+clsChild.alist.keySet().get(anames.get(i)));
 			writeStore(out, writeLoad(out, varName, "%" + (varName.value-1), atype), "%" + (varName.value-3), atype);
 			//out.println("store " + atype + " %" + (varName.value-1) + ", " + atype + "* %" + (varName.value-3));
@@ -291,8 +299,9 @@ public class Codegen{
 			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (cls.name) + ", %class." + (cls.name) + "* %this, i32 0, i32 " + i + "; " + attr.name);
 			amap.put(attr.name, varName.value-1);
 		}
+		attrNumMap.put(cls.name, amap);
 		for(int i=0;i<cls.alist.size();++i) {
-			AST.attr attr = cls.alist.get(anames.get(i));
+			AST.attr attr = initOrder.get(cls.name).get(i);
 			Integer aName = amap.get(attr.name);
 			if(attr.value.type.equals("_no_type")){
 				if(attr.typeid.equals("Int")){
@@ -396,7 +405,7 @@ public class Codegen{
 			String val = ((AST.bool_const) expr).value ? "1" : "0";
 			return needPointer ? writeStore(out, val, varNameStart, "Int") : val ;
 		}
-		else if(expr instanceof AST.object){ // TODO: Doesnt consider attrs while writing for methods
+		else if(expr instanceof AST.object){
 			Integer valAttr = aMap.get(((AST.object) expr).name);
 			//out.println("%" + (varNameStart.value++) + " = load " + getType(expr.type) + ", " + getType(expr.type) + "* %" + valAttr);
 			return needPointer ? "%"+valAttr : writeLoad(out, varNameStart, "%"+valAttr, ((AST.object) expr).type);
@@ -543,7 +552,8 @@ public class Codegen{
 				callVarName = callCastVal;
 			}
 			String retType = callingMeth.typeid.equals("SELF_TYPE") ? finalExpr.typeid : callingMeth.typeid;
-			String callStr = ("call " + getType(retType) + (baseClasses.contains(finalExpr.typeid) ? "" : "*") + " @" + finalExpr.name + "_" + finalExpr.typeid + "(" + getTypePointer(callingCls.name) + " " + callVarName);// Add actuals and case of strings
+			boolean predef = preDefMthds.contains(finalExpr.name) && callingCls.mlist.get(finalExpr.name).body instanceof AST.no_expr;
+			String callStr = ("call " + getType(retType) + (predef ? "" : "*") + " @" + finalExpr.name + "_" + finalExpr.typeid + "(" + getTypePointer(callingCls.name) + " " + callVarName);// Add actuals and case of strings
 			for(int i = 0; i < callingMeth.formals.size() ; ++i){
 				String val = evalExpr(cls, finalExpr.actuals.get(i), out, varNameStart, aMap, true);
 				if(!finalExpr.actuals.get(i).type.equals(callingMeth.formals.get(i).typeid)){
@@ -557,7 +567,7 @@ public class Codegen{
 			out.println("%" + (varNameStart.value++) + " = " + callStr + ")");
 			//return needPointer ? "%" + (varNameStart.value-1) : writeLoad(out, varNameStart, "%" + (varNameStart.value-1), callingMeth.typeid);
 			if(needPointer){
-				if(baseClasses.contains(retType)){
+				if(predef){
 					return writeStore(out, "%" + (varNameStart.value-1), varNameStart, retType);
 				}
 				else{
@@ -565,7 +575,7 @@ public class Codegen{
 				}
 			}
 			else{
-				if(baseClasses.contains(retType)){
+				if(predef){
 					return "%" + (varNameStart.value-1);
 				}
 				else{
@@ -632,8 +642,96 @@ public class Codegen{
 		System.out.println("Unchecked case");
 		return "0";
 	}
-	private void checkExpr(){
-		
+	private void checkExpr(ClassPlus cls, AST.expression expr, AST.attr a){
+		if(expr instanceof AST.string_const || expr instanceof AST.int_const || expr instanceof AST.bool_const || expr instanceof AST.new_){
+			return;
+		}
+		else if(expr instanceof AST.object){
+			AST.attr attr = cls.alist.get(((AST.object) expr).name);
+			ArrayList<AST.attr> order = initOrder.get(cls.name);
+			if(order.indexOf(attr) == -1){
+				order.add(order.indexOf(a),attr);
+			}
+			else if(order.indexOf(attr) > order.indexOf(a)){
+				order.remove(a);
+				order.add(order.indexOf(attr)+1, a);
+			}
+		}
+		else if(expr instanceof AST.comp){
+			AST.comp finalExpr = (AST.comp) expr;
+			checkExpr(cls, finalExpr.e1, a);
+		}
+		else if(expr instanceof AST.eq){
+			AST.eq finalExpr = (AST.eq) expr;
+			checkExpr(cls, finalExpr.e1, a);
+			checkExpr(cls, finalExpr.e2, a);
+		}
+		else if(expr instanceof AST.leq){
+			AST.leq finalExpr = (AST.leq) expr;
+			checkExpr(cls, finalExpr.e1, a);
+			checkExpr(cls, finalExpr.e2, a);
+		}
+		else if(expr instanceof AST.neg){
+			AST.neg finalExpr = (AST.neg) expr;
+			checkExpr(cls, finalExpr.e1, a);
+		}
+		else if(expr instanceof AST.plus){
+			AST.plus finalExpr = (AST.plus) expr;
+			checkExpr(cls, finalExpr.e1, a);
+			checkExpr(cls, finalExpr.e2, a);
+		}
+		else if(expr instanceof AST.sub){
+			AST.sub finalExpr = (AST.sub) expr;
+			checkExpr(cls, finalExpr.e1, a);
+			checkExpr(cls, finalExpr.e2, a);
+		}
+		else if(expr instanceof AST.mul){
+			AST.mul finalExpr = (AST.mul) expr;
+			checkExpr(cls, finalExpr.e1, a);
+			checkExpr(cls, finalExpr.e2, a);
+		}
+		else if(expr instanceof AST.divide){
+			AST.divide finalExpr = (AST.divide) expr;
+			checkExpr(cls, finalExpr.e1, a);
+			checkExpr(cls, finalExpr.e2, a);
+		}
+		else if(expr instanceof AST.isvoid){
+			AST.isvoid finalExpr = (AST.isvoid) expr;
+			checkExpr(cls, finalExpr.e1, a);
+		}
+		else if(expr instanceof AST.assign){
+			AST.assign finalExpr = (AST.assign) expr;
+			AST.attr attr = cls.alist.get(finalExpr.name);
+			ArrayList<AST.attr> order = initOrder.get(cls.name);
+			if(order.indexOf(attr) == -1){
+				order.add(order.indexOf(a),attr);
+			}
+			else if(order.indexOf(attr) > order.indexOf(a)){
+				order.remove(a);
+				order.add(order.indexOf(attr)+1, a);
+			}
+			checkExpr(cls, finalExpr.e1, a);
+		}
+		else if(expr instanceof AST.block){
+			AST.block finalExpr = (AST.block) expr;
+			for(AST.expression e: finalExpr.l1) checkExpr(cls, e, a);
+		}
+		else if(expr instanceof AST.static_dispatch){
+			AST.static_dispatch finalExpr = (AST.static_dispatch) expr;
+			checkExpr(cls, finalExpr.caller, a);
+			for(AST.expression act: finalExpr.actuals) checkExpr(cls, act, a);
+		}
+		else if(expr instanceof AST.cond){
+			AST.cond finalExpr = (AST.cond) expr;
+			checkExpr(cls, finalExpr.predicate, a);
+			checkExpr(cls, finalExpr.ifbody, a);
+			checkExpr(cls, finalExpr.elsebody, a);
+		}
+		else if(expr instanceof AST.loop){
+			AST.loop finalExpr = (AST.loop) expr;
+			checkExpr(cls, finalExpr.predicate, a);
+			checkExpr(cls, finalExpr.body, a);
+		}
 	}
 
 
@@ -676,6 +774,12 @@ public class Codegen{
 						}
 					}
 					classMap.put(c.name, cplus);
+					initOrder.put(c.name, new ArrayList<>());
+					for(String aname: cplus.alist.keySet()){
+						AST.attr a = cplus.alist.get(aname);
+						if(!initOrder.get(c.name).contains(a)) initOrder.get(c.name).add(a);
+						checkExpr(cplus, a.value, a);
+					}
 					q.add(c.name);
 				}
 			}
