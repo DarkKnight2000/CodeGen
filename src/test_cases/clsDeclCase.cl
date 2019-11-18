@@ -1,3 +1,6 @@
+-- This case shows that attrs with non datatype classes shld be stored as
+-- pointers to objects of original classes in ir of containing class.
+
 class Main {
 	a:Int <- b+1;
 	b:Int <- 1;

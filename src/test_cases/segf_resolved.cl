@@ -1,6 +1,9 @@
+-- All functions have a pointer to their containing class as a extra parameter
+-- For main method this pointer passed should call constructor of Main class as it is the starting the pointer
+-- of execution
 class Main {
 	a:Int;
-	b:IO;
+	b:IO <- new IO;
 	c:A;
 	main():Int{{
 		c@A.f();
@@ -12,7 +15,12 @@ class Main {
 
 class A{
 	a:Int;
-	f():Int{
-		a
+	f():Int{{
+		new A@A.abort();
+		a;
+	}};
+	-- Predefined fns can be overrided.
+	abort():Object{
+		new Object
 	};
 };
