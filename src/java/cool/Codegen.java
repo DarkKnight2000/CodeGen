@@ -32,7 +32,7 @@ public class Codegen{
 		initOrder = new HashMap<String, ArrayList<AST.attr>>(); // For each class, it contains the order of attributes in which they have to be initialised( checks for dependence of initialisaton of attribute on other atrribute values)
 		attrNumMap = new HashMap<String, HashMap<String , Integer>>(); // For each class stores the offset to get the attribute in 'getelementptr' in LLVM-IR
 		typeMap.put("Int","i32"); // Contains only int, string, bool
-		typeMap.put("Bool", "i1");
+		typeMap.put("Bool", "i1"); //  We refer to these 3 as basic types from now
 		typeMap.put("String", "i8*");
 		ClsToWrite = new ArrayList<String>();
 		baseClasses = new ArrayList<String>(Arrays.asList("Object", "IO", "Int", "String", "Bool"));
@@ -111,14 +111,18 @@ public class Codegen{
 		}
 		if(!ClsToWrite.contains(meth.typeid)) ClsToWrite.add(meth.typeid);
 	}*/
+
+	// A method to get type of class in IR
 	String getType(String s){
 		return typeMap.containsKey(s) ? typeMap.get(s) : "%class."+s;
 	}
 	String getTypePointer(String s){
 		return getType(s)+"*";
 	}
+
+	// To Emit methods
 	private void writeMethod(PrintWriter out, AST.method meth, ClassPlus cls){
-		//checkForWrite(meth);
+		//Pre-defined methods that are not overriden
 		if(meth.body instanceof AST.no_expr){
 			if(meth.name.equals("abort")){// Working
 				out.print("\ndefine %class.Object @abort_" + cls.name + "(" + getType(cls.name)+"* %this " + "){\nentry:");
@@ -147,7 +151,7 @@ public class Codegen{
 				out.println("%6 = call i8* @strcat( i8* %5, i8* %3 )");
 				out.println("ret i8* %6\n}");
 			}
-			else if(meth.name.equals("substr")){// Not working
+			else if(meth.name.equals("substr")){// working
 				out.println("@str."+(global++)+" = private unnamed_addr constant [1 x i8] zeroinitializer, align 1");
 				out.println("\ndefine i8* @substr_" + cls.name + "( i8**, i32* %sp, i32* %lp){\nentry:");
 				writeLoad(out, "%start", "%sp", "Int");
@@ -228,6 +232,8 @@ public class Codegen{
 		ArrayList<String> anames = new ArrayList<String>(cls.alist.keySet());
 		HashMap<String,String> tMap = new HashMap<String,String>();
 		String thisVar = "%this";
+
+		// For main method we have initialise a 'Main' class
 		if(mthd.name.equals("main") && cls.name.equals("Main")){
 			String thisVarPoi = writeAlloc(out, varName, getTypePointer(cls.name));
 			thisVar = writeAlloc(out, varName, getType(cls.name));
@@ -252,6 +258,7 @@ public class Codegen{
 
 		for(int j=0;j<cls.alist.size();++j) {
 			AST.attr attr = cls.alist.get(anames.get(j));
+			// Pointer to a variable is stored in the previous instruction
 			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (cls.name) + ", %class." + (cls.name) + "* " + thisVar + ", i32 0, i32 " + j + "; " + attr.name);
 			if(!typeMap.containsKey(attr.typeid)) writeLoad(out, varName, "%" + (varName.value-1), getTypePointer(attr.typeid), true);
 			aMap.put(attr.name, varName.value-1);
@@ -268,7 +275,7 @@ public class Codegen{
 				writeLoad(out, varName, "%"+(varName.value-1), getTypePointer(f.typeid), true);
 			}
 			aMap.put(f.name, varName.value-1);
-			if(mthd.name.equals("g")) System.out.println(f.name + " got " + aMap.get(f.name));
+			//if(mthd.name.equals("g")) System.out.println(f.name + " got " + aMap.get(f.name));
 		}
 		if(mthd.body.type.equals(mthd.typeid)){
 			val = evalExpr(cls, mthd.body, out, varName, aMap, tMap, true);
@@ -284,7 +291,7 @@ public class Codegen{
 		return buffer;
 	}
 	private void writeCaster(PrintWriter out, ClassPlus clsPar, ClassPlus clsChild){
-		out.print("\ndefine void @CAST_" + clsPar.name + "_" + clsChild.name + "(");
+		out.print("\ndefine void @CAST_" + clsPar.name + "_" + clsChild.name + "("); // No method is gaurenteed to have this name as all features start with small letters
 		String s = "";
 		s += getType(clsPar.name)+"* %par, ";
 		s += getType(clsChild.name)+"* %chld, ";
@@ -313,6 +320,8 @@ public class Codegen{
 		out.println("ret void\n}");
 		buffer = "";
 	}
+
+	// To emit class definitions
 	private void writeClass(PrintWriter out, ClassPlus cls){
 		//checkForWrite(cls);
 		out.print("\n%class."+cls.name+" = type{ ");
@@ -323,7 +332,7 @@ public class Codegen{
 	}
 
 	private void writeConstructor(PrintWriter out, ClassPlus cls) {
-		out.print("\ndefine void @INIT_" + cls.name);//No method is gaurenteed to have this name as all features start with small letters
+		out.print("\ndefine void @INIT_" + cls.name); //No method is gaurenteed to have this name as all features start with small letters
 		out.print(" ( %class." + cls.name + "*" + " %this" + " ) { \n");
 		out.println("entry: ");
 		IntPointer varName = new IntPointer();
@@ -343,7 +352,7 @@ public class Codegen{
 		}
 		attrNumMap.put(cls.name, amap);
 		for(int i=0;i<cls.alist.size();++i) {
-			AST.attr attr = initOrder.get(cls.name).get(i);
+			AST.attr attr = initOrder.get(cls.name).get(i); // Initialisation shld be done in this order
 			Integer aName = amap.get(attr.name);
 			if(attr.value.type.equals("_no_type")){
 				if(attr.typeid.equals("Int")){
@@ -359,7 +368,7 @@ public class Codegen{
 					out.println("store i8* getelementptr inbounds ([1 x i8], [1 x i8]* @str." + (global-1) + ", i32 0, i32 0), i8** %"+ (aName) +", align 8");
 				}
 				else{
-					writeStore(out, "null", "%"+(aName-1), getTypePointer(attr.typeid), true);
+					writeStore(out, "null", "%"+(aName-1), getTypePointer(attr.typeid), true); // Write 'null' to check for void
 				}
 			}
 			else{
@@ -396,22 +405,27 @@ public class Codegen{
 		buffer = "";
 	}
 
+	// A method to write a load instruction into a old variable
 	private String writeLoad(PrintWriter out, String a, String b, String type){
 		out.println(a + " = load " + getType(type) + ", " + getType(type) + "* " + b);
 		return a;
 	}
+	// A overload to write a load instruction into a new variable
 	private String writeLoad(PrintWriter out, IntPointer a, String b, String type){
 		out.println("%" + (a.value++) + " = load " + getType(type) + ", " + getType(type) + "* " + b);
 		return "%"+(a.value-1);
 	}
+	// A overload to write a load instruction into a variable without calling getType
 	private String writeLoad(PrintWriter out, IntPointer a, String b, String type, boolean typeFlag){
 		out.println("%" + (a.value++) + " = load " + type + ", " + type + "* " + b);
 		return "%"+(a.value-1);
 	}
+	// A method to write a store instruction into a old variable
 	private String writeStore(PrintWriter out, String a, String b, String type){
 		out.println("store " + getType(type) + " " + a + ", " + getType(type) + "* " + b);
 		return a;
 	}
+	// A method to write a store instruction into a new variable
 	private String writeStore(PrintWriter out, String a, IntPointer b, String type){
 		out.println("%" + (b.value++) + " = alloca " + getType(type) + ", align 8");
 		out.println("store " + getType(type) + " " + a + ", " + getType(type) + "* %" + (b.value-1));
@@ -421,10 +435,12 @@ public class Codegen{
 		out.println("store " + type + " " + a + ", " + type + "* " + b);
 		return a;
 	}
+	// A method to write a alloca instruction
 	private String writeAlloc(PrintWriter out, IntPointer b, String typeString){
 		out.println("%" + (b.value++) + " = alloca " + typeString);
 		return "%"+(b.value-1);
 	}
+	// String constants in IR require some formatting, this fn returns formatted strings
 	private String writeStr(String str){
 		String finalStr = "";
 		for(int i=0; i<str.length(); ++i){
@@ -439,6 +455,11 @@ public class Codegen{
 		return finalStr;
 	}
 
+	// This function can be recursively called to evaluate expressions and writing instructions to IR
+	// The bool argument can be changed to get the result value or get a pointer to the result value( which is useful in static dispatch)
+	// The intpointer argument keeps track of recent instruction no. which can be used to write further instructions
+	// aMap contains map from attribute name to instruction no. it is stored in
+	// tMap contains map from attribute name to attribute type
 	private String evalExpr(ClassPlus cls, AST.expression expr, PrintWriter out, IntPointer varNameStart, HashMap<String,Integer> aMap, HashMap<String,String> tMap, boolean needPointer){
 		if(expr instanceof AST.string_const){
 			String val = ((AST.string_const) expr).value;
@@ -502,13 +523,14 @@ public class Codegen{
 			AST.divide finalExpr = (AST.divide) expr;
 			String left = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, tMap, false), right = evalExpr(cls, finalExpr.e2,out,varNameStart, aMap, tMap, false);
 			String divRes = writeAlloc(out, varNameStart, "i32");
+			// Error handling by using a if condition and static dispatch to print error message
 			if(!(finalExpr.e2 instanceof AST.int_const) || (finalExpr.e2 instanceof AST.int_const && evalExpr(cls, finalExpr.e2, out, varNameStart, aMap, tMap, false).equals("0"))){
 				out.println("%" + (varNameStart.value++) + " = icmp ne i32 0, " + right);
 				out.print("br i1 %" + (varNameStart.value-1) + ", label %" + (varNameStart.value++) + ", label %" + (varNameStart.value+1) + "\n");
 			}// 					0										1											3
 			out.println("%" + (varNameStart.value++) + " = sdiv i32 " + left + ", " + right);
 			writeStore(out, "%" + (varNameStart.value-1), divRes, "Int");
-			//
+
 			if(!(finalExpr.e2 instanceof AST.int_const) || (finalExpr.e2 instanceof AST.int_const && evalExpr(cls, finalExpr.e2, out, varNameStart, aMap, tMap, false).equals("0"))){
 				out.println("br label %" + (varNameStart.value+6));
 				varNameStart.value++;
@@ -537,6 +559,7 @@ public class Codegen{
 			String right = "";
 			int varNum = aMap.get(finalExpr.name) - (typeMap.containsKey(tMap.get(finalExpr.name)) ? 0 : 1);
 			System.out.println("Assgn ");
+			// Non-basic types have pointer to pointers, so we need separate ways to handle basic and non-basic types
 			if(!tMap.get(finalExpr.name).equals(finalExpr.e1.type)){
 				right = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, tMap, true);
 				addCast(tMap.get(finalExpr.name), finalExpr.e1.type);
@@ -607,6 +630,7 @@ public class Codegen{
 			mthdsToWrite.put(callingMeth, callingCls);
 			System.out.println("Stat dsi on " + callingCls.name + " on " + callingMeth.name);
 			String callStr = "";
+			// The actuals are evaluated first and then the caller
 			for(int i = 0; i < callingMeth.formals.size() ; ++i){
 				String val = evalExpr(cls, finalExpr.actuals.get(i), out, varNameStart, aMap, tMap, true);
 				if(!finalExpr.actuals.get(i).type.equals(callingMeth.formals.get(i).typeid)){
@@ -619,6 +643,7 @@ public class Codegen{
 			}
 			String callVarName = evalExpr(cls, finalExpr.caller, out, varNameStart, aMap, tMap,true);
 			String retType = callingMeth.typeid.equals("SELF_TYPE") ? finalExpr.typeid : callingMeth.typeid;
+			// AST.new_ cannot be void
 			if(!(finalExpr.caller instanceof AST.new_)){
 				mthdsToWrite.put(classMap.get("IO").mlist.get("out_string"), classMap.get("IO"));
 				out.println("%" + (varNameStart.value++) + " = icmp eq " + getType(finalExpr.caller.type) + "* " + callVarName + ", null");
@@ -642,6 +667,7 @@ public class Codegen{
 				out.println("call void @CAST_" + finalExpr.typeid + "_" + finalExpr.caller.type + "( " + getType(finalExpr.typeid) + "* " + callCastVal + ", " + getTypePointer(finalExpr.caller.type) + " " + callVarName + " )");
 				callVarName = callCastVal;
 			}
+			// Pre-defined methods return values not pointers, so they are handled differently
 			boolean predef = preDefMthds.contains(finalExpr.name) && callingCls.mlist.get(finalExpr.name).body instanceof AST.no_expr;
 			callStr = ("call " + getType(retType) + (predef ? "" : "*") + " @" + finalExpr.name + "_" + finalExpr.typeid + "(" + getTypePointer(callingCls.name) + " " + callVarName) + callStr;// Add actuals and case of strings
 			out.println("%" + (varNameStart.value++) + " = " + callStr + ")");
@@ -683,7 +709,7 @@ public class Codegen{
 			int elselabel = varNameStart.value++;
 			ifbody = buffStr.toString();
 			buffStr = new StringWriter();
-			buffer = new PrintWriter(buffStr);
+			buffer = new PrintWriter(buffStr); // This printwriter stores the instructions written while evaluating the ifbody and elsebody
 			elseval = evalExpr(cls, finalExpr.elsebody, buffer, varNameStart, aMap, tMap, needPointer);
 			if(!finalExpr.type.equals(finalExpr.elsebody.type)){
 				addCast(finalExpr.type, finalExpr.elsebody.type);
@@ -715,11 +741,16 @@ public class Codegen{
 			out.println(varNameStart.value);
 			out.println(buffStr.toString());
 			varNameStart.value++;
+			// Returns null
 			return needPointer ? "null" : writeLoad(out, varNameStart, "null", "Object");
 		}
 		System.out.println("Unchecked case");
 		return "0";
 	}
+
+	// This function is used to check dependencies of attribute initialisations on other attributes values of same class
+	// If a attribute A's value depends on attribute B's value indexOf(A) > indexOf(B)
+	// This function also calls recursively to check dependence
 	private void checkExpr(ClassPlus cls, AST.expression expr, AST.attr a){
 		if(expr instanceof AST.string_const || expr instanceof AST.int_const || expr instanceof AST.bool_const || expr instanceof AST.new_){
 			return;
@@ -817,6 +848,8 @@ public class Codegen{
 
 
 
+	// A wrapper class to make a integer into a pointer
+	// As java stores this as pointer a change in a recursive call is retained unlinke in the case of passing just int.
 	class IntPointer{
 		public int value;
 		public IntPointer(){value = 0;}
@@ -826,6 +859,8 @@ public class Codegen{
 		if(castToWrite.containsKey(a)) castToWrite.get(a).add(b);
 		else castToWrite.put(a, new HashSet<String>(Arrays.asList(b)));
 	}
+	// Creating classplus objects for respective classes and retaining inheritance
+	// ordering attributes of each class is also done here
 	private void processProgram(AST.program program){
 		Queue<String> q = new LinkedList<String>();
 		BaseClasses base = new BaseClasses();

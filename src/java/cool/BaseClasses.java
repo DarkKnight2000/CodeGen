@@ -1,7 +1,7 @@
 package cool;
 
-import java.io.PrintWriter;
 import java.util.*;
+// A class to contain definitions of pre-defined types in cool
 public class BaseClasses{
     AST.class_ Object, IO, String, Int, Bool;
 	static HashMap<String,String> typeMap = new HashMap<String,String>();
@@ -36,29 +36,5 @@ public class BaseClasses{
 		typeMap.put("Int","i32");
 		typeMap.put("Bool", "i1");
 		typeMap.put("String", "i8*");
-	}
-	static String getType(String s){
-		return typeMap.containsKey(s) ? typeMap.get(s) : "%class."+s;
-	}
-	static String getType(String s, String val){
-		return "[" + (val.length()+1) + " x i8]*";
-	}
-	public static String writeMethod(String cname, String mname, PrintWriter out, Codegen.IntPointer g){
-		String buffer = "";
-		if(mname.equals("abort")){
-			out.print("\ndefine void @abort_" + cname + "(" + getType(cname)+"* %this, " + "){\nentry:");
-			out.println("unreachable\n}");
-		}
-		else if(mname.equals("type_name")){
-			out.print("\ndefine i8* @type_name_" + cname + "(" + getType(cname)+"* %this, " + "){\nentry:");
-			buffer += "@str."+(g.value++)+" = private unnamed_addr constant ["+(cname.length()+1)+" x i8] c\"" + cname + "\\00\", align 1\n";
-			out.println("ret i8* getelementptr inbounds ([" + (cname.length()+1) + " x i8], [" + (cname.length()+1) + " x i8]* @str." + (g.value-1) + ", i32 0, i32 0)" + "\n}");
-		}
-		else if(mname.equals("copy")){
-			out.print("\ndefine " + getType(cname) + "* @copy_" + cname + "(" + getType(cname)+"* %this, " + "){\nentry:");
-			buffer += "@str."+(g.value++)+" = private unnamed_addr constant ["+(cname.length()+1)+" x i8] c\"" + cname + "\\00\", align 1\n";
-			out.println("ret " + getType(cname) + " * %this\n}");
-		}
-		return buffer;
 	}
 }
