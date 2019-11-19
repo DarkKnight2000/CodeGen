@@ -23,21 +23,21 @@ public class Codegen{
 		//Write Code generator code here
 		out.println("; I am a comment in LLVM-IR. Feel free to remove me.");
 		classMap = new HashMap<String,ClassPlus>();
-		typeMap = new HashMap<String,String>();
-		castToWrite = new HashMap<String,HashSet<String>>();
-		mthdsToWrite = new HashMap<AST.method, ClassPlus>();
-		mthdsWriting = new HashMap<AST.method, ClassPlus>();
-		allWrittenMthds = new ArrayList<AST.method>();
-		inherGraph = new HashMap<String, ArrayList<AST.class_>>();
-		initOrder = new HashMap<String, ArrayList<AST.attr>>();
-		attrNumMap = new HashMap<String, HashMap<String , Integer>>();
-		typeMap.put("Int","i32");
+		typeMap = new HashMap<String,String>(); // Map from typename to type in IR
+		castToWrite = new HashMap<String,HashSet<String>>(); // Parent to children casting methods needed
+		mthdsToWrite = new HashMap<AST.method, ClassPlus>(); // A Buffer to collect methods to be written
+		mthdsWriting = new HashMap<AST.method, ClassPlus>(); // A buffer on which we can loop over to write and collect required methods at a time
+		allWrittenMthds = new ArrayList<AST.method>(); // List of methods written so far. Required to avoid writing a method two times
+		inherGraph = new HashMap<String, ArrayList<AST.class_>>(); // Inheritance graph 
+		initOrder = new HashMap<String, ArrayList<AST.attr>>(); // For each class, it contains the order of attributes in which they have to be initialised( checks for dependence of initialisaton of attribute on other atrribute values)
+		attrNumMap = new HashMap<String, HashMap<String , Integer>>(); // For each class stores the offset to get the attribute in 'getelementptr' in LLVM-IR
+		typeMap.put("Int","i32"); // Contains only int, string, bool
 		typeMap.put("Bool", "i1");
 		typeMap.put("String", "i8*");
 		ClsToWrite = new ArrayList<String>();
 		baseClasses = new ArrayList<String>(Arrays.asList("Object", "IO", "Int", "String", "Bool"));
-		preDefMthds = new ArrayList<String>(Arrays.asList("abort", "type_name", "copy", "out_string", "out_int", "in_int", "in_string", "concat", "substr", "length"));
-		divErr = new AST.static_dispatch(new AST.new_("IO", 0), "IO", "out_string", new ArrayList<expression>(Arrays.asList((AST.expression) new AST.string_const("Error: Division by 0", 0))), 0);
+		preDefMthds = new ArrayList<String>(Arrays.asList("abort", "type_name", "copy", "out_string", "out_int", "in_int", "in_string", "concat", "substr", "length")); // List of pre-defined methods
+		divErr = new AST.static_dispatch(new AST.new_("IO", 0), "IO", "out_string", new ArrayList<expression>(Arrays.asList((AST.expression) new AST.string_const("Error: Division by 0", 0))), 0); // An expression to use for error handling of division by 0.
 		divErr.type = "IO";
 		divErr.caller.type = "IO";
 		divErr.actuals.get(0).type = "String";
@@ -52,7 +52,7 @@ public class Codegen{
 			if(!typeMap.containsKey(cls.name)) writeClass(out, cls);
 		}
 		for(ClassPlus cls: classMap.values()){
-			if(!typeMap.containsKey(cls.name)) writeConstructor(out, cls);
+			if(!typeMap.containsKey(cls.name)) writeConstructor(out, cls); // Int, bool, string dont require constructors or declarations
 		}
 		mthdsWriting.putAll(mthdsToWrite);
 		while(!mthdsWriting.isEmpty()){
@@ -78,9 +78,8 @@ public class Codegen{
 		for(String s: castToWrite.keySet()){
 			for(String sc: castToWrite.get(s)) writeCaster(out, classMap.get(s), classMap.get(sc));
 		}
-		out.println("define %class.Object* @createVoid() #0 {\nentry:\n" + 
-		"%0 = alloca %class.Object\n" +
-		"ret %class.Object* %0 \n}");
+		
+		// Required inbuilt functions for some pre-defined methods
 		out.println("declare void @exit(i32)");
 		out.println("declare i32 @scanf(i8*, ...) #1");
 		out.println("declare i32 @printf(i8*, ...) #1");
@@ -234,7 +233,7 @@ public class Codegen{
 			thisVar = writeAlloc(out, varName, getType(cls.name));
 			writeStore(out, thisVar, thisVarPoi, getTypePointer(cls.name), true);
 			thisVar = writeLoad(out, varName, thisVarPoi, getTypePointer(cls.name), true);
-			int k = 0;
+			/*int k = 0;
 			for(String a: classMap.get("Main").alist.keySet()){
 				AST.attr tempat = classMap.get("Main").alist.get(a);
 				if(!typeMap.containsKey(tempat.typeid)){
@@ -243,13 +242,14 @@ public class Codegen{
 					out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (cls.name) + ", %class." + (cls.name) + "* " + thisVar + ", i32 0, i32 " + (attrNumMap.get("Main").get(tempat.name)-k) + "; " + tempat.name);
 					writeStore(out, tempatalloc, "%" + (varName.value-1), getTypePointer(tempat.typeid), true);
 				}
-			}
+			}*/
 			out.println("call void @INIT_" + cls.name + "(" + getTypePointer(cls.name) + " " + thisVar + ")");
 		}
-		/*writeStore(out, thisVar, writeAlloc(out, varName, getTypePointer(cls.name)), getTypePointer(cls.name), true);
+		writeStore(out, thisVar, writeAlloc(out, varName, getTypePointer(cls.name)), getTypePointer(cls.name), true);
 		writeLoad(out, varName, "%"+(varName.value-1), getTypePointer(cls.name), true);
 		aMap.put("self", varName.value-1);
-		tMap.put("self", cls.name);*/
+		tMap.put("self", cls.name);
+
 		for(int j=0;j<cls.alist.size();++j) {
 			AST.attr attr = cls.alist.get(anames.get(j));
 			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (cls.name) + ", %class." + (cls.name) + "* " + thisVar + ", i32 0, i32 " + j + "; " + attr.name);
@@ -257,10 +257,18 @@ public class Codegen{
 			aMap.put(attr.name, varName.value-1);
 			tMap.put(attr.name, attr.typeid);
 		}
-		int in = 0;
+		int in=0;
 		for(AST.formal f: mthd.formals){
 			tMap.put(f.name, f.typeid);
-			aMap.put(f.name, in++);
+			if(typeMap.containsKey(f.typeid)){
+				writeStore(out, writeLoad(out, varName, "%" + in++, f.typeid), varName, f.typeid);
+			}
+			else{
+				writeStore(out, "%" + in++, writeAlloc(out, varName, getTypePointer(f.typeid)), getTypePointer(f.typeid), true);
+				writeLoad(out, varName, "%"+(varName.value-1), getTypePointer(f.typeid), true);
+			}
+			aMap.put(f.name, varName.value-1);
+			if(mthd.name.equals("g")) System.out.println(f.name + " got " + aMap.get(f.name));
 		}
 		if(mthd.body.type.equals(mthd.typeid)){
 			val = evalExpr(cls, mthd.body, out, varName, aMap, tMap, true);
@@ -325,6 +333,10 @@ public class Codegen{
 		for(int i=0;i<cls.alist.size();++i) {
 			AST.attr attr = cls.alist.get(anames.get(i));
 			out.println("%" + varName.value++ + " = getelementptr inbounds %class." + (cls.name) + ", %class." + (cls.name) + "* %this, i32 0, i32 " + i + "; " + attr.name);
+			/*if(!typeMap.containsKey(attr.typeid)){
+				String tempatalloc = writeAlloc(out, varName, getType(attr.typeid));
+				writeStore(out, tempatalloc, "%" + (varName.value-2), getTypePointer(attr.typeid), true);
+			}*/
 			if(!typeMap.containsKey(attr.typeid)) writeLoad(out, varName, "%" + (varName.value-1), getTypePointer(attr.typeid), true);
 			amap.put(attr.name, varName.value-1);
 			tmap.put(attr.name, attr.typeid);
@@ -373,8 +385,8 @@ public class Codegen{
 						out.println("call void @CAST_" + attr.typeid + "_" + attr.value.type + "(" + getTypePointer(attr.typeid) + " %" + amap.get(attr.name) + ", " + getTypePointer(attr.value.type) + " " + val + ")");
 					}
 					else{
-						val = evalExpr(cls, attr.value, out, varName, amap, tmap, false);
-						out.println("store " + getType(attr.typeid) + " " + val + ", " + getType(attr.typeid) + "* %" + aName);
+						val = evalExpr(cls, attr.value, out, varName, amap, tmap, true);
+						out.println("store " + getType(attr.typeid) + "* " + val + ", " + getType(attr.typeid) + "** %" + (aName-1));
 					}
 				}
 			}
@@ -441,11 +453,6 @@ public class Codegen{
 		else if(expr instanceof AST.bool_const){
 			String val = ((AST.bool_const) expr).value ? "1" : "0";
 			return needPointer ? writeStore(out, val, varNameStart, "Int") : val ;
-		}
-		else if(expr instanceof AST.object){
-			Integer valAttr = aMap.get(((AST.object) expr).name);
-			//out.println("%" + (varNameStart.value++) + " = load " + getType(expr.type) + ", " + getType(expr.type) + "* %" + valAttr);
-			return needPointer ? "%"+valAttr : writeLoad(out, varNameStart, "%"+valAttr, ((AST.object) expr).type);
 		}
 		else if(expr instanceof AST.comp){
 			AST.comp finalExpr = (AST.comp) expr;
@@ -514,6 +521,11 @@ public class Codegen{
 			}
 			return needPointer ? divRes : writeLoad(out, varNameStart, divRes, "Int");
 		}
+		else if(expr instanceof AST.object){
+			Integer valAttr = aMap.get(((AST.object) expr).name);
+			//out.println("%" + (varNameStart.value++) + " = load " + getType(expr.type) + ", " + getType(expr.type) + "* %" + valAttr);
+			return needPointer ? "%"+valAttr : writeLoad(out, varNameStart, "%"+valAttr, ((AST.object) expr).type);
+		}
 		else if(expr instanceof AST.isvoid){
 			AST.isvoid finalExpr = (AST.isvoid) expr;
 			String e1 = evalExpr(cls, finalExpr.e1, out, varNameStart, aMap, tMap, true);
@@ -536,13 +548,13 @@ public class Codegen{
 			}
 			else if(!typeMap.containsKey(tMap.get(finalExpr.name))){
 				right = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, tMap, true);
-				String loaded = writeLoad(out, varNameStart, right, tMap.get(finalExpr.name));
-				writeStore(out, loaded, "%" + aMap.get(finalExpr.name), tMap.get(finalExpr.name));
-				return needPointer ? right : loaded;
+				System.out.println("right - " + right + " - varnum - " + varNum);
+				writeStore(out, right, "%" + varNum, getTypePointer(tMap.get(finalExpr.name)), true);
+				return needPointer ? right : writeLoad(out, varNameStart, right, getType(finalExpr.e1.type));
 				//out.println("store " + getType(finalExpr.type) + " " + right + ", " + getType(finalExpr.type) + "* %" + varNum + ", align 4");
 			}
 			else{
-				right = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, tMap, true);
+				right = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, tMap, false);
 				writeStore(out, right, "%"+varNum, getType(finalExpr.type), true);
 				return needPointer ? "%"+varNum : right;
 				//out.println("store " + getType(finalExpr.type) + " " + right + ", " + getType(finalExpr.type) + "* %" + varNum + ", align 4");
@@ -594,6 +606,17 @@ public class Codegen{
 			AST.method callingMeth = callingCls.mlist.get(finalExpr.name);
 			mthdsToWrite.put(callingMeth, callingCls);
 			System.out.println("Stat dsi on " + callingCls.name + " on " + callingMeth.name);
+			String callStr = "";
+			for(int i = 0; i < callingMeth.formals.size() ; ++i){
+				String val = evalExpr(cls, finalExpr.actuals.get(i), out, varNameStart, aMap, tMap, true);
+				if(!finalExpr.actuals.get(i).type.equals(callingMeth.formals.get(i).typeid)){
+					addCast(callingMeth.formals.get(i).typeid, finalExpr.actuals.get(i).type);
+					String castVal = writeAlloc(out, varNameStart, getType(callingMeth.formals.get(i).typeid));
+					out.println("call void @CAST_" + callingMeth.formals.get(i).typeid + "_" + finalExpr.actuals.get(i).type + "( " + getType(callingMeth.formals.get(i).typeid) + "* " + castVal + ", " + getTypePointer(finalExpr.actuals.get(i).type) + " " + val + " )");
+					val = castVal;
+				}
+				callStr += ", " + getType(callingMeth.formals.get(i).typeid) + "* " + val; 
+			}
 			String callVarName = evalExpr(cls, finalExpr.caller, out, varNameStart, aMap, tMap,true);
 			String retType = callingMeth.typeid.equals("SELF_TYPE") ? finalExpr.typeid : callingMeth.typeid;
 			if(!(finalExpr.caller instanceof AST.new_)){
@@ -620,17 +643,7 @@ public class Codegen{
 				callVarName = callCastVal;
 			}
 			boolean predef = preDefMthds.contains(finalExpr.name) && callingCls.mlist.get(finalExpr.name).body instanceof AST.no_expr;
-			String callStr = ("call " + getType(retType) + (predef ? "" : "*") + " @" + finalExpr.name + "_" + finalExpr.typeid + "(" + getTypePointer(callingCls.name) + " " + callVarName);// Add actuals and case of strings
-			for(int i = 0; i < callingMeth.formals.size() ; ++i){
-				String val = evalExpr(cls, finalExpr.actuals.get(i), out, varNameStart, aMap, tMap, true);
-				if(!finalExpr.actuals.get(i).type.equals(callingMeth.formals.get(i).typeid)){
-					addCast(callingMeth.formals.get(i).typeid, finalExpr.actuals.get(i).type);
-					String castVal = writeAlloc(out, varNameStart, getType(callingMeth.formals.get(i).typeid));
-					out.println("call void @CAST_" + callingMeth.formals.get(i).typeid + "_" + finalExpr.actuals.get(i).type + "( " + getType(callingMeth.formals.get(i).typeid) + "* " + castVal + ", " + getTypePointer(finalExpr.actuals.get(i).type) + " " + val + " )");
-					val = castVal;
-				}
-				callStr += ", " + getType(callingMeth.formals.get(i).typeid) + "* " + val; 
-			}
+			callStr = ("call " + getType(retType) + (predef ? "" : "*") + " @" + finalExpr.name + "_" + finalExpr.typeid + "(" + getTypePointer(callingCls.name) + " " + callVarName) + callStr;// Add actuals and case of strings
 			out.println("%" + (varNameStart.value++) + " = " + callStr + ")");
 			//return needPointer ? "%" + (varNameStart.value-1) : writeLoad(out, varNameStart, "%" + (varNameStart.value-1), callingMeth.typeid);
 			if(needPointer){
@@ -702,9 +715,7 @@ public class Codegen{
 			out.println(varNameStart.value);
 			out.println(buffStr.toString());
 			varNameStart.value++;
-			String retVar = "%" + (varNameStart.value++);
-			out.println(retVar + " = call %class.Object* @createVoid()");
-			return needPointer ? retVar : writeLoad(out, varNameStart, retVar, "Object");
+			return needPointer ? "null" : writeLoad(out, varNameStart, "null", "Object");
 		}
 		System.out.println("Unchecked case");
 		return "0";
