@@ -748,7 +748,6 @@ public class Codegen{
 		return "0";
 	}
 
-	// This function is used to check dependencies of attribute initialisations on other attributes values of same class
 	// If a attribute A's value depends on attribute B's value indexOf(A) > indexOf(B)
 	// This function also calls recursively to check dependence
 	private void checkExpr(ClassPlus cls, AST.expression expr, AST.attr a){
