@@ -50,3 +50,5 @@
         But the methods are written so that they work only on copies, so it wouldn't cause a problem.
     ** Another problem which made us create a pointer to pointer is AST.assign. There can be cases where there is an assignment inside the body, for non-basic classes( which are pointers ) this means the value in pointer to their pointer is changed to the pointer being assigned.
     As this is not the actual pointer to the value( a pointer of user-defined class ) being passed, it doesnt affect original value.
+
+* In the provided semantic the argument of isvoid was not assigned type. We updated it accordingly.

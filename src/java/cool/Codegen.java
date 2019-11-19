@@ -849,6 +849,7 @@ public class Codegen{
 
 	// A wrapper class to make a integer into a pointer
 	// As java stores this as pointer a change in a recursive call is retained unlinke in the case of passing just int.
+	// The value attribute stores the number of the next instruction to be written
 	class IntPointer{
 		public int value;
 		public IntPointer(){value = 0;}
