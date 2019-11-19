@@ -6,18 +6,17 @@ class Main {
     e:A;
 	main():Int{{
 		d@A.f();
+		d@B.g(e,c);
 		e;
-		a <- new Int;
+		b@IO.out_int(e@A.ret());
 		c@A.abort();
-		if isvoid(b) then new IO@IO.out_string("isvoid\n") else new IO@IO.out_string("not void\n") fi;
-		b@IO.out_string("b is working\n");
-		a/a;
+		a;
 	}};
 	
 };
 
 class A{
-	a:Int;
+	a:Int <- 1;
 	b:A;
 	f():Int{{
 		new A@A.abort();
@@ -26,6 +25,9 @@ class A{
 	-- Predefined fns can be overrided.
 	abort():Object{
 		new Object
+	};
+	ret():Int{
+		a
 	};
 };
 
