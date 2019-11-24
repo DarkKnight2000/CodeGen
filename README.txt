@@ -2,11 +2,8 @@
 
 * We start by processing the program and creating a ClassPlus object for each class
 
-* Using checkExpr function we handled the following case:
-    ** An attribute 'a' is initialised to value of another attribute 'b'
-    ** But 'b' is also initialised with another value
-    ** So in constructor 'b' should be initialised first and then 'a'
-    ** checkExpr function does a recursive search on 'a' value and places 'b' before 'a' in an array which keeps track of the order
+* A hashmap of initOrder is maintained wich keeps track of order of declaration of attributes in each class based on the lineNo property in them.
+    The initialisations in the constructor are done in this order
 
 * All class declarations are emitted into IR
 
@@ -14,7 +11,7 @@
 
 * We find all these methods by keeping two buffers. We loop over one buffer and collect methods that
     are called from each method in the 1st buffer and store them in 2nd buffer. After the loop we move 2nd buffer contents
-    to 1st buffer. All this is done in a while loop. This loop ends when both buffers are empty.
+    to 1st buffer. All this is done in a while loop. This loop ends when both buffers are empty. The 1st buffer is initialised with "main" method.
 
 * writeClass method emits the declaration( including inherited attributes ). It is stored with the name %class.{class.name}
 
@@ -24,7 +21,7 @@
 
 * writeMthdBody emits the method body.
 
-* In the start of main method, we created a pointer for Main class and called constructor on it. As this is the starting point of program it need a pointer to work as 'this' inside the body.
+* In the start of main method, we created a pointer for Main class and called constructor on it. As this is the starting point of program it needs a pointer to work as 'this' inside the body.
 
 * The function evalExpr is the main part of the code. It is used to write the evaluation of a expression into IR. It is called recursively on the expressions inside a expression to evaluate them.
     ** The if conditional is handles by creating another printwriter which stores the emitted ir of ifbody and elsebody. Then we calculate the branch values accordingly
@@ -39,7 +36,11 @@
 * evalExpr function also takes a boolean parameter. This boolean can be set to true, if we want the pointer to the value of the expression being evaluated( in case of static_dispatch where we need pointers to the actual expressions )
 , or it can be false if we just need the value( in case of plus we just need values of both operands to add them ).
 
-* We also keep a HashMap(attrNumMap) from attr.name to the offset we need for gettting the pointer from getelementptr. This can be used to write the cast method.
+* Lets call Int, String, Bool as basic types as they dont need separate declarations in IR.
+
+* We have taken care that for non-basic types, the instruction with pointer to pointer( which is essentially a reference to the object ) is just before instruction containing pointer of that variable. This property is used in handling static_dispatch to get the pointer to pointer.
+
+* We also keep a HashMap(attrNumMap) from attr.name to the offset we need for gettting the pointer from getelementptr. This can be used to write the cast method where we store values of inherited attributes from child pointer in parent pointer ( which is passed as argument )
 
 * In the cast method, we pass a parent class pointer in which we store the result of casting. We loop over attributes of parent/ancestor class, get the respective offset for getelementptr and store the value in the parent class.
 

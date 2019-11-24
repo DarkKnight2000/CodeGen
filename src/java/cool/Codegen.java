@@ -58,7 +58,7 @@ public class Codegen{
 		while(!mthdsWriting.isEmpty()){
 			mthdsToWrite.clear();
 			for(AST.method m: mthdsWriting.keySet()){
-				System.out.println("wr mt - " + m.name);
+				//System.out.println("wr mt - " + m.name);
 				if(!allWrittenMthds.contains(m)){
 					writeMethod(out, m, mthdsWriting.get(m));
 					allWrittenMthds.add(m);
@@ -450,7 +450,7 @@ public class Codegen{
 			else if(ch == ('\\'))	finalStr += "\\5C";
 			else if(ch == ('\"'))	finalStr += "\\22";
 			else finalStr += ch;
-			System.out.println("ch - " + ch);
+			//System.out.println("ch - " + ch);
 		}
 		return finalStr;
 	}
@@ -558,7 +558,7 @@ public class Codegen{
 			AST.assign finalExpr = (AST.assign) expr;
 			String right = "";
 			int varNum = aMap.get(finalExpr.name) - (typeMap.containsKey(tMap.get(finalExpr.name)) ? 0 : 1);
-			System.out.println("Assgn ");
+			//System.out.println("Assgn ");
 			// Non-basic types have pointer to pointers, so we need separate ways to handle basic and non-basic types
 			if(!tMap.get(finalExpr.name).equals(finalExpr.e1.type)){
 				right = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, tMap, true);
@@ -571,7 +571,7 @@ public class Codegen{
 			}
 			else if(!typeMap.containsKey(tMap.get(finalExpr.name))){
 				right = evalExpr(cls, finalExpr.e1,out,varNameStart, aMap, tMap, true);
-				System.out.println("right - " + right + " - varnum - " + varNum);
+				//System.out.println("right - " + right + " - varnum - " + varNum);
 				writeStore(out, right, "%" + varNum, getTypePointer(tMap.get(finalExpr.name)), true);
 				return needPointer ? right : writeLoad(out, varNameStart, right, getType(finalExpr.e1.type));
 				//out.println("store " + getType(finalExpr.type) + " " + right + ", " + getType(finalExpr.type) + "* %" + varNum + ", align 4");
@@ -601,7 +601,7 @@ public class Codegen{
 				return "0";
 			}
 			else if(finalExpr.type.equals("String")){
-				System.out.println("new str");
+				//System.out.println("new str");
 				buffer += "@str."+(global++)+" = private unnamed_addr constant [1 x i8] zeroinitializer, align 1";
 				typeMap.put("@str." + (global-1), "[1 x i8]*");
 				out.println("%" + (varNameStart.value++) + " = bitcast [1 x i8]* @str." + (global-1) + " to i8*");
@@ -628,7 +628,7 @@ public class Codegen{
 			ClassPlus callingCls = classMap.get(finalExpr.typeid);
 			AST.method callingMeth = callingCls.mlist.get(finalExpr.name);
 			mthdsToWrite.put(callingMeth, callingCls);
-			System.out.println("Stat dsi on " + callingCls.name + " on " + callingMeth.name);
+			//System.out.println("Stat dsi on " + callingCls.name + " on " + callingMeth.name);
 			String callStr = "";
 			// The actuals are evaluated first and then the caller
 			for(int i = 0; i < callingMeth.formals.size() ; ++i){
@@ -748,101 +748,6 @@ public class Codegen{
 		return "0";
 	}
 
-	// If a attribute A's value depends on attribute B's value indexOf(A) > indexOf(B)
-	// This function also calls recursively to check dependence
-	private void checkExpr(ClassPlus cls, AST.expression expr, AST.attr a){
-		if(expr instanceof AST.string_const || expr instanceof AST.int_const || expr instanceof AST.bool_const || expr instanceof AST.new_){
-			return;
-		}
-		else if(expr instanceof AST.object){
-			AST.attr attr = cls.alist.get(((AST.object) expr).name);
-			ArrayList<AST.attr> order = initOrder.get(cls.name);
-			if(order.indexOf(attr) == -1){
-				order.add(order.indexOf(a),attr);
-			}
-			else if(order.indexOf(attr) > order.indexOf(a)){
-				order.remove(a);
-				order.add(order.indexOf(attr)+1, a);
-			}
-		}
-		else if(expr instanceof AST.comp){
-			AST.comp finalExpr = (AST.comp) expr;
-			checkExpr(cls, finalExpr.e1, a);
-		}
-		else if(expr instanceof AST.eq){
-			AST.eq finalExpr = (AST.eq) expr;
-			checkExpr(cls, finalExpr.e1, a);
-			checkExpr(cls, finalExpr.e2, a);
-		}
-		else if(expr instanceof AST.leq){
-			AST.leq finalExpr = (AST.leq) expr;
-			checkExpr(cls, finalExpr.e1, a);
-			checkExpr(cls, finalExpr.e2, a);
-		}
-		else if(expr instanceof AST.neg){
-			AST.neg finalExpr = (AST.neg) expr;
-			checkExpr(cls, finalExpr.e1, a);
-		}
-		else if(expr instanceof AST.plus){
-			AST.plus finalExpr = (AST.plus) expr;
-			checkExpr(cls, finalExpr.e1, a);
-			checkExpr(cls, finalExpr.e2, a);
-		}
-		else if(expr instanceof AST.sub){
-			AST.sub finalExpr = (AST.sub) expr;
-			checkExpr(cls, finalExpr.e1, a);
-			checkExpr(cls, finalExpr.e2, a);
-		}
-		else if(expr instanceof AST.mul){
-			AST.mul finalExpr = (AST.mul) expr;
-			checkExpr(cls, finalExpr.e1, a);
-			checkExpr(cls, finalExpr.e2, a);
-		}
-		else if(expr instanceof AST.divide){
-			AST.divide finalExpr = (AST.divide) expr;
-			checkExpr(cls, finalExpr.e1, a);
-			checkExpr(cls, finalExpr.e2, a);
-		}
-		else if(expr instanceof AST.isvoid){
-			AST.isvoid finalExpr = (AST.isvoid) expr;
-			checkExpr(cls, finalExpr.e1, a);
-		}
-		else if(expr instanceof AST.assign){
-			AST.assign finalExpr = (AST.assign) expr;
-			AST.attr attr = cls.alist.get(finalExpr.name);
-			ArrayList<AST.attr> order = initOrder.get(cls.name);
-			if(order.indexOf(attr) == -1){
-				order.add(order.indexOf(a),attr);
-			}
-			else if(order.indexOf(attr) > order.indexOf(a)){
-				order.remove(a);
-				order.add(order.indexOf(attr)+1, a);
-			}
-			checkExpr(cls, finalExpr.e1, a);
-		}
-		else if(expr instanceof AST.block){
-			AST.block finalExpr = (AST.block) expr;
-			for(AST.expression e: finalExpr.l1) checkExpr(cls, e, a);
-		}
-		else if(expr instanceof AST.static_dispatch){
-			AST.static_dispatch finalExpr = (AST.static_dispatch) expr;
-			checkExpr(cls, finalExpr.caller, a);
-			for(AST.expression act: finalExpr.actuals) checkExpr(cls, act, a);
-		}
-		else if(expr instanceof AST.cond){
-			AST.cond finalExpr = (AST.cond) expr;
-			checkExpr(cls, finalExpr.predicate, a);
-			checkExpr(cls, finalExpr.ifbody, a);
-			checkExpr(cls, finalExpr.elsebody, a);
-		}
-		else if(expr instanceof AST.loop){
-			AST.loop finalExpr = (AST.loop) expr;
-			checkExpr(cls, finalExpr.predicate, a);
-			checkExpr(cls, finalExpr.body, a);
-		}
-	}
-
-
 
 
 
@@ -890,12 +795,25 @@ public class Codegen{
 					initOrder.put(c.name, new ArrayList<>());
 					for(String aname: cplus.alist.keySet()){
 						AST.attr a = cplus.alist.get(aname);
-						if(!initOrder.get(c.name).contains(a)) initOrder.get(c.name).add(a);
-						checkExpr(cplus, a.value, a);
+						initOrder.get(c.name).add(a);
+					}
+					/*Collections.sort(initOrder.get(c.name), new Comparator<AST.attr>() {
+						@Override
+						public int compare(AST.attr u1, AST.attr u2) {
+							return Codegen.compare(u1.lineNo,u2.lineNo);
+						}
+					});*/
+					for(AST.attr aname: initOrder.get(c.name)){
+						System.out.println(aname.name + aname.lineNo);
 					}
 					q.add(c.name);
 				}
 			}
 		}
+	}
+	public static int compare(int x, int y) {
+		return x < y ? -1
+			: x > y ? 1
+			: 0;
 	}
 }
